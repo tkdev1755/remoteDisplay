@@ -1,28 +1,25 @@
 /*
- * LINUX RECEIVER (C++) - UDP THUNDERBOLT OPTIMIZED (SDL2)
- * - Port 5000 : Réception Vidéo (Assemblage des chunks)
- * - Port 5001 : Réception Souris (Position seulement)
- * - Affichage : SDL2 (Affiche la vidéo + un point rouge pour la souris distante)
+ * LINUX RECEIVER (C++ SDL2) - FINAL GOLD VERSION
+ * Optimisations: Recvmmsg 64, MTU 65k, Busy Poll, Drain, Color Hack
  */
 
+#define _GNU_SOURCE
 #include <iostream>
 #include <vector>
-#include <thread>
-#include <mutex>
-#include <map>
 #include <cstring>
-#include <SDL2/SDL.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #include <unistd.h>
-#include "common.h" // Doit contenir MousePacket { int32_t x; int32_t y; };
+#include <sys/ioctl.h>
+#include <fcntl.h>
+#include <SDL2/SDL.h>
 
-#define PORT_VIDEO 5000
-#define PORT_MOUSE 5001
-#define MAX_BUFFER 65535
+#define PORT 5000
+#define MAX_UDP_PAYLOAD 65000 // MTU 65k support
+#define VLEN 64 // Batch size
 
-// Doit correspondre à la structure du Sender
-struct UDPFrameHeader {
+struct __attribute__((packed)) UDPFrameHeader {
     uint32_t frameId;
     uint16_t chunkId;
     uint16_t totalChunks;
@@ -31,238 +28,134 @@ struct UDPFrameHeader {
     uint32_t totalSize;
 };
 
-// Structure pour l'assemblage des paquets vidéo
-struct PendingFrame {
-    uint32_t receivedChunks;
-    std::vector<uint8_t> data;
-};
+int main() {
+    // 1. INIT SDL AVEC CORRECTION COULEURS
+    // Hint Linear : Adoucit l'image (moins pixelisée/sharp)
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
 
-// État partagé entre les threads réseau et le thread de rendu
-struct AppState {
-    std::mutex mtx;
-    std::vector<uint8_t> videoPixels;
-    int videoWidth = 0;
-    int videoHeight = 0;
-    bool newFrameReady = false;
+    if (SDL_Init(SDL_INIT_VIDEO) < 0) return 1;
 
-    int mouseX = 0;
-    int mouseY = 0;
+    // Hack BT.601 : Force une matrice SD sur du contenu HD.
+    // Effet : Désature légèrement les couleurs -> Moins agressif.
+    SDL_SetYUVConversionMode(SDL_YUV_CONVERSION_BT601);
+
+    SDL_Window* window = SDL_CreateWindow(
+        "TBT RX", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 3840, 2160,
+        SDL_WINDOW_SHOWN | SDL_WINDOW_BORDERLESS
+    );
+
+    // Renderer SANS VSync pour latence minimale (Roue libre)
+    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+    SDL_Texture* texture = nullptr;
+
+    // 2. SOCKET OPTIMISÉ
+    int sock = socket(AF_INET, SOCK_DGRAM, 0);
+
+    // Buffer Kernel 40 Mo
+    int rcvbuf = 40 * 1024 * 1024;
+    setsockopt(sock, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
+
+    // Busy Poll : Empêche le process de dormir (Latence ultra-faible)
+    int busy_poll = 50;
+    setsockopt(sock, SOL_SOCKET, SO_BUSY_POLL, &busy_poll, sizeof(busy_poll));
+
+    struct timeval tv = {1, 0};
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+    struct sockaddr_in addr = {0};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_port = htons(PORT);
+    bind(sock, (struct sockaddr*)&addr, sizeof(addr));
+
+    // 3. STRUCTURES BATCHING (Static Alloc)
+    std::vector<uint8_t> frameBuffer(15 * 1024 * 1024);
+
+    struct mmsghdr msgs[VLEN];
+    struct iovec iovecs[VLEN];
+    uint8_t packetBuffers[VLEN][MAX_UDP_PAYLOAD + sizeof(UDPFrameHeader)];
+
+    for (int i = 0; i < VLEN; i++) {
+        memset(&iovecs[i], 0, sizeof(iovecs[i]));
+        memset(&msgs[i], 0, sizeof(msgs[i]));
+        iovecs[i].iov_base = packetBuffers[i];
+        iovecs[i].iov_len = sizeof(packetBuffers[i]);
+        msgs[i].msg_hdr.msg_iov = &iovecs[i];
+        msgs[i].msg_hdr.msg_iovlen = 1;
+    }
+
+    uint32_t currentFrameId = 0;
+    int chunksReceived = 0;
+    int expectedChunks = 0;
+    int currentWidth = 0, currentHeight = 0;
     bool running = true;
-};
+    SDL_Event event;
 
-// Instance globale pour simplifier l'accès depuis les threads
-AppState appState;
+    SDL_ShowCursor(SDL_DISABLE);
+    std::cout << "🚀 Receiver MTU 65k Ready." << std::endl;
 
-// Thread de réception Souris (Port 5001)
-void mouseListener() {
-    int sock = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sock < 0) { perror("Socket Mouse failed"); return; }
-
-    struct sockaddr_in addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = INADDR_ANY;
-    addr.sin_port = htons(PORT_MOUSE);
-
-    if (bind(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-        perror("Bind Mouse failed");
-        return;
-    }
-
-    std::cout << "Thread Souris écoute sur le port " << PORT_MOUSE << std::endl;
-
-    MousePacket packet;
-    while (appState.running) {
-        // recvfrom est bloquant. En production, utilisez un timeout ou select() pour quitter proprement.
-        ssize_t len = recvfrom(sock, &packet, sizeof(packet), 0, NULL, NULL);
-        if (len == sizeof(packet)) {
-            std::lock_guard<std::mutex> lock(appState.mtx);
-            appState.mouseX = packet.x;
-            appState.mouseY = packet.y;
+    while (running) {
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_QUIT || (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE)) running = false;
         }
-    }
-    close(sock);
-}
 
-// Thread de réception Vidéo (Port 5000)
-void videoListener() {
-    int sock = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sock < 0) { perror("Socket Video failed"); return; }
-
-    // Augmentation du buffer de réception système pour gérer le débit Thunderbolt
-    int rcvBuff = 4 * 1024 * 1024; // 4MB
-    setsockopt(sock, SOL_SOCKET, SO_RCVBUF, &rcvBuff, sizeof(rcvBuff));
-
-    struct sockaddr_in addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = INADDR_ANY;
-    addr.sin_port = htons(PORT_VIDEO);
-
-    if (bind(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-        perror("Bind Video failed");
-        return;
-    }
-
-    std::cout << "Thread Vidéo écoute sur le port " << PORT_VIDEO << " (MTU 9000 mode)" << std::endl;
-
-    std::vector<uint8_t> buffer(MAX_BUFFER);
-    std::map<uint32_t, PendingFrame> frameBuffer;
-
-    // Doit correspondre au MAX_UDP_PAYLOAD du sender (Optimisé Thunderbolt)
-    const size_t CHUNK_PAYLOAD_SIZE = 8900;
-
-    while (appState.running) {
-        ssize_t len = recvfrom(sock, buffer.data(), MAX_BUFFER, 0, NULL, NULL);
-        if (len < (ssize_t)sizeof(UDPFrameHeader)) continue;
-
-        UDPFrameHeader* header = (UDPFrameHeader*)buffer.data();
-        size_t dataSize = len - sizeof(UDPFrameHeader);
-        uint8_t* dataPtr = buffer.data() + sizeof(UDPFrameHeader);
-
-        // -- Logique d'assemblage des fragments --
-        PendingFrame& frame = frameBuffer[header->frameId];
-
-        // Premier fragment reçu pour cette frame ? On alloue.
-        if (frame.data.empty()) {
-            // Sécurité anti-bug (50MB max pour buffer frame 4K+BGRA)
-            if (header->totalSize > 50000000) {
-                 frameBuffer.erase(header->frameId);
-                 continue;
+        // --- DRAIN LOGIC ---
+        int bytesAvailable;
+        if (ioctl(sock, FIONREAD, &bytesAvailable) == 0) {
+            // Seuil augmenté à 30 Mo pour éviter les micro-saccades sur faux positifs
+            if (bytesAvailable > 16 * 1024 * 1024) {
+                while (bytesAvailable > 0) {
+                    if (recvmmsg(sock, msgs, VLEN, 0, NULL) <= 0) break;
+                    ioctl(sock, FIONREAD, &bytesAvailable);
+                }
+                currentFrameId = 0; chunksReceived = 0; continue;
             }
-            frame.data.resize(header->totalSize);
-            frame.receivedChunks = 0;
         }
 
-        // Copie des données au bon offset
-        // L'offset se calcule via l'ID du chunk et la taille FIXE du payload
-        size_t offset = header->chunkId * CHUNK_PAYLOAD_SIZE;
+        // --- BATCH READ ---
+        int numMsgs = recvmmsg(sock, msgs, VLEN, 0, NULL);
+        if (numMsgs <= 0) continue;
 
-        if (offset + dataSize <= frame.data.size()) {
-            memcpy(frame.data.data() + offset, dataPtr, dataSize);
-            frame.receivedChunks++;
-        }
+        for (int i = 0; i < numMsgs; i++) {
+            UDPFrameHeader* header = (UDPFrameHeader*)packetBuffers[i];
+            uint8_t* payload = packetBuffers[i] + sizeof(UDPFrameHeader);
+            int len = msgs[i].msg_len;
 
-        // Si la frame est COMPLÈTE
-        if (frame.receivedChunks >= header->totalChunks) {
-            std::lock_guard<std::mutex> lock(appState.mtx);
+            if (header->frameId > currentFrameId || (currentFrameId - header->frameId) > 500) {
+                currentFrameId = header->frameId;
+                chunksReceived = 0;
+                expectedChunks = header->totalChunks;
 
-            // Mise à jour de l'état pour l'affichage SDL
-            appState.videoWidth = header->width;
-            appState.videoHeight = header->height;
-            appState.videoPixels = frame.data;
-            appState.newFrameReady = true;
+                if (header->width != currentWidth || header->height != currentHeight) {
+                    currentWidth = header->width; currentHeight = header->height;
+                    if (header->totalSize > frameBuffer.size()) frameBuffer.resize(header->totalSize);
 
-            // Nettoyage de la frame traitée
-            frameBuffer.erase(header->frameId);
+                    if (texture) SDL_DestroyTexture(texture);
+                    texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_NV12, SDL_TEXTUREACCESS_STREAMING, currentWidth, currentHeight);
+                }
+            }
 
-            // Garbage Collection simple : supprimer les très vieilles frames incomplètes
-            if (frameBuffer.size() > 10) {
-                auto it = frameBuffer.begin();
-                while (it != frameBuffer.end()) {
-                    if (it->first < header->frameId - 10) it = frameBuffer.erase(it);
-                    else ++it;
+            if (header->frameId == currentFrameId) {
+                size_t offset = header->chunkId * MAX_UDP_PAYLOAD;
+                if (offset + (len - sizeof(UDPFrameHeader)) <= frameBuffer.size()) {
+                    memcpy(frameBuffer.data() + offset, payload, len - sizeof(UDPFrameHeader));
+                    chunksReceived++;
+                }
+
+                if (chunksReceived >= expectedChunks && texture) {
+                    SDL_UpdateTexture(texture, NULL, frameBuffer.data(), currentWidth);
+                    SDL_RenderClear(renderer);
+                    SDL_RenderCopy(renderer, texture, NULL, NULL);
+                    SDL_RenderPresent(renderer);
                 }
             }
         }
     }
-    close(sock);
-}
 
-int main(int argc, char* argv[]) {
-    if (SDL_Init(SDL_INIT_VIDEO) < 0) {
-        std::cerr << "Erreur SDL: " << SDL_GetError() << std::endl;
-        return 1;
-    }
-
-    // Fenêtre SDL
-    SDL_Window* window = SDL_CreateWindow("Récepteur Thunderbolt - Visualisation",
-                                          SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                                          1280, 720, SDL_WINDOW_RESIZABLE);
-    if (!window) return 1;
-
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-    if (!renderer) return 1;
-
-    SDL_Texture* texture = nullptr;
-    int texWidth = 0, texHeight = 0;
-
-    // Lancement des threads en arrière-plan
-    std::thread tMouse(mouseListener);
-    std::thread tVideo(videoListener);
-    tMouse.detach();
-    tVideo.detach();
-
-    SDL_Event event;
-    while (appState.running) {
-        while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_QUIT) {
-                appState.running = false;
-            }
-        }
-
-        // Section critique : Lecture des données reçues et mise à jour Texture
-        {
-            std::lock_guard<std::mutex> lock(appState.mtx);
-
-            // Si la résolution vidéo a changé ou si c'est la première frame
-            if (appState.videoWidth > 0 && (appState.videoWidth != texWidth || appState.videoHeight != texHeight)) {
-                if (texture) SDL_DestroyTexture(texture);
-                texWidth = appState.videoWidth;
-                texHeight = appState.videoHeight;
-                // BGRA32 correspond souvent au format natif Mac (kCVPixelFormatType_32BGRA)
-                texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_BGRA32,
-                                            SDL_TEXTUREACCESS_STREAMING,
-                                            texWidth, texHeight);
-            }
-
-            // Si une nouvelle image complète est arrivée, on met à jour la texture GPU
-            if (appState.newFrameReady && texture) {
-                SDL_UpdateTexture(texture, NULL, appState.videoPixels.data(), texWidth * 4);
-                appState.newFrameReady = false;
-            }
-
-            // --- RENDU ---
-            SDL_RenderClear(renderer);
-
-            // 1. Dessiner la vidéo
-            if (texture) {
-                SDL_RenderCopy(renderer, texture, NULL, NULL);
-            }
-
-            // 2. Dessiner le point rouge (Souris)
-            if (texWidth > 0 && texHeight > 0) {
-                // Calcul de l'échelle entre la résolution vidéo reçue et la fenêtre actuelle
-                int winW, winH;
-                SDL_GetWindowSize(window, &winW, &winH);
-
-                // Le sender envoie les coordonnées brutes (ex: 3000x2000), il faut les adapter à la fenêtre SDL
-                float scaleX = (float)winW / texWidth;
-                float scaleY = (float)winH / texHeight;
-
-                SDL_Rect mouseRect;
-                mouseRect.x = (int)(appState.mouseX * scaleX);
-                mouseRect.y = (int)(appState.mouseY * scaleY);
-                mouseRect.w = 10; // Largeur du point
-                mouseRect.h = 10; // Hauteur du point
-
-                SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255); // ROUGE
-                SDL_RenderFillRect(renderer, &mouseRect);
-
-                // Reset couleur noire pour le prochain clear
-                SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-            }
-        }
-
-        SDL_RenderPresent(renderer);
-        SDL_Delay(16); // ~60 FPS
-    }
-
-    // Nettoyage
     if (texture) SDL_DestroyTexture(texture);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
-
+    close(sock);
     return 0;
 }

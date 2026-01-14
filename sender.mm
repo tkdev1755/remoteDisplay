@@ -1,8 +1,6 @@
 /*
- * MAC SENDER (Objective-C++) - UDP THUNDERBOLT OPTIMIZED
- * Utilise deux sockets UDP distinctes pour la vidéo et la souris.
- * Optimisé pour MTU 9000 (Jumbo Frames).
- * AJOUT : Binding explicite sur l'IP locale pour forcer l'interface Thunderbolt.
+ * MAC SENDER (Objective-C++) - FINAL GOLD VERSION
+ * Optimisations: MTU 65k, Pacer V2, Color Correction, Mach RealTime
  */
 
 #include <iostream>
@@ -12,6 +10,10 @@
 #include <chrono>
 #include <mutex>
 #include <cmath>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <sys/uio.h>
 
 #import <Foundation/Foundation.h>
 #import <ScreenCaptureKit/ScreenCaptureKit.h>
@@ -19,69 +21,53 @@
 #import <CoreVideo/CoreVideo.h>
 #import <ApplicationServices/ApplicationServices.h>
 
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include "common.h"
+// MACH (Priorité CPU)
+#include <mach/mach.h>
+#include <mach/thread_policy.h>
 
-// Ports définis pour la séparation des flux
 #define PORT_VIDEO 5000
-#define PORT_MOUSE 5001
+// Optimisation MTU 65518 : On envoie des paquets géants (moins d'interruptions CPU)
+#define MAX_UDP_PAYLOAD 65000
 
-// OPTIMISATION THUNDERBOLT (MTU 9000)
-// IP Header (20) + UDP Header (8) = 28 bytes overhead.
-// 9000 - 28 = 8972 max théorique.
-// On fixe à 8900 pour la sécurité et l'alignement.
-#define MAX_UDP_PAYLOAD 8900
-
-// En-tête spécifique pour les chunks vidéo UDP
 struct UDPFrameHeader {
-    uint32_t frameId;      // ID unique de la frame
-    uint16_t chunkId;      // Numéro du morceau
-    uint16_t totalChunks;  // Nombre total de morceaux
+    uint32_t frameId;
+    uint16_t chunkId;
+    uint16_t totalChunks;
     uint16_t width;
     uint16_t height;
-    uint32_t totalSize;    // Taille totale de la frame décompressée
+    uint32_t totalSize;
 };
+
+// Fonction pour passer le thread en priorité "Temps Réel" au niveau du Kernel Mach
+void setRealTimePriority() {
+    thread_time_constraint_policy_data_t policy;
+    policy.period = 0;
+    policy.computation = 50000;
+    policy.constraint = 80000;
+    policy.preemptible = 0;
+
+    kern_return_t ret = thread_policy_set(mach_thread_self(), THREAD_TIME_CONSTRAINT_POLICY, (thread_policy_t)&policy, THREAD_TIME_CONSTRAINT_POLICY_COUNT);
+    if (ret == KERN_SUCCESS) std::cout << "⚡ Priorité Mach RealTime activée." << std::endl;
+}
 
 class NetworkSender {
 private:
     int sock;
     struct sockaddr_in serverAddr;
     std::mutex sendMutex;
-    uint32_t frameCounter = 0; // Pour donner un ID unique à chaque frame
+    uint32_t frameCounter = 0;
 
 public:
-    // MODIFICATION: Ajout de localIp pour forcer l'interface de sortie
     NetworkSender(const std::string& destIp, int port, const std::string& localIp) {
-        sock = socket(AF_INET, SOCK_DGRAM, 0); // SOCK_DGRAM pour UDP
-        if (sock < 0) {
-            perror("Erreur création socket UDP");
-            exit(1);
-        }
+        sock = socket(AF_INET, SOCK_DGRAM, 0);
 
-        // --- FIX ROUTAGE: BIND SUR L'INTERFACE THUNDERBOLT ---
-        // On force le socket à utiliser l'IP locale du Mac (Thunderbolt) comme source.
-        // Cela empêche l'OS de router les paquets via le Wi-Fi si les sous-réseaux se chevauchent.
-        struct sockaddr_in localAddr;
-        memset(&localAddr, 0, sizeof(localAddr));
+        struct sockaddr_in localAddr = {0};
         localAddr.sin_family = AF_INET;
-        localAddr.sin_port = 0; // 0 = Laisse l'OS choisir un port source libre aléatoire
-        if (inet_pton(AF_INET, localIp.c_str(), &localAddr.sin_addr) <= 0) {
-            std::cerr << "ERREUR: IP Locale (Mac) invalide : " << localIp << std::endl;
-            exit(1);
-        }
+        inet_pton(AF_INET, localIp.c_str(), &localAddr.sin_addr);
+        bind(sock, (struct sockaddr*)&localAddr, sizeof(localAddr));
 
-        if (bind(sock, (struct sockaddr*)&localAddr, sizeof(localAddr)) < 0) {
-            perror("ERREUR BIND: Impossible de s'attacher à l'IP Thunderbolt du Mac. Vérifiez l'adresse.");
-            exit(1);
-        }
-        std::cout << "Socket lié à l'interface locale : " << localIp << std::endl;
-        // -----------------------------------------------------
-
-        // Augmentation de la taille du buffer d'envoi du socket système
-        // Important pour le débit Thunderbolt
-        int sendBuff = 4 * 1024 * 1024; // 4MB buffer
+        // Buffer d'envoi 4MB
+        int sendBuff = 4 * 1024 * 1024;
         setsockopt(sock, SOL_SOCKET, SO_SNDBUF, &sendBuff, sizeof(sendBuff));
 
         memset(&serverAddr, 0, sizeof(serverAddr));
@@ -90,62 +76,73 @@ public:
         inet_pton(AF_INET, destIp.c_str(), &serverAddr.sin_addr);
     }
 
-    // Envoi optimisé pour les petits paquets (Souris)
-    void sendMousePacket(const MousePacket& packet) {
-        std::lock_guard<std::mutex> lock(sendMutex);
-        // En UDP, on envoie directement sans header complexe pour la souris (latence minime)
-        sendto(sock, &packet, sizeof(packet), 0, (struct sockaddr*)&serverAddr, sizeof(serverAddr));
-    }
-
-    // Envoi fragmenté pour les frames vidéo
     void sendFramePacket(const void* data, size_t size, uint16_t w, uint16_t h) {
         std::lock_guard<std::mutex> lock(sendMutex);
-
         frameCounter++;
         size_t totalChunks = (size + MAX_UDP_PAYLOAD - 1) / MAX_UDP_PAYLOAD;
+
+        UDPFrameHeader header;
+        header.frameId = frameCounter;
+        header.totalChunks = (uint16_t)totalChunks;
+        header.width = w;
+        header.height = h;
+        header.totalSize = (uint32_t)size;
+
+        struct msghdr msg = {0};
+        struct iovec iov[2];
+        msg.msg_name = &serverAddr;
+        msg.msg_namelen = sizeof(serverAddr);
+        msg.msg_iov = iov;
+        msg.msg_iovlen = 2;
+
+        uint8_t* byteData = (uint8_t*)data;
+        int packetsBatchCount = 0;
 
         for (size_t i = 0; i < totalChunks; ++i) {
             size_t offset = i * MAX_UDP_PAYLOAD;
             size_t currentChunkSize = std::min((size_t)MAX_UDP_PAYLOAD, size - offset);
 
-            // Construction du paquet : [UDPFrameHeader] + [Data Chunk]
-            std::vector<uint8_t> packet(sizeof(UDPFrameHeader) + currentChunkSize);
+            header.chunkId = (uint16_t)i;
 
-            UDPFrameHeader* header = (UDPFrameHeader*)packet.data();
-            header->frameId = frameCounter;
-            header->chunkId = (uint16_t)i;
-            header->totalChunks = (uint16_t)totalChunks;
-            header->width = w;
-            header->height = h;
-            header->totalSize = (uint32_t)size;
+            iov[0].iov_base = &header;
+            iov[0].iov_len = sizeof(UDPFrameHeader);
+            iov[1].iov_base = byteData + offset;
+            iov[1].iov_len = currentChunkSize;
 
-            memcpy(packet.data() + sizeof(UDPFrameHeader), (uint8_t*)data + offset, currentChunkSize);
-
-            // Envoi du chunk
-            sendto(sock, packet.data(), packet.size(), 0, (struct sockaddr*)&serverAddr, sizeof(serverAddr));
+            if (sendmsg(sock, &msg, 0) < 0) {
+                // Si buffer plein, petite pause d'urgence
+                if (errno == EAGAIN || errno == EWOULDBLOCK || errno == ENOBUFS) {
+                    usleep(50);
+                    i--; // Retry
+                    continue;
+                }
+            }
+            packetsBatchCount++;
+            if (packetsBatchCount >= 4) {
+                usleep(1);
+                packetsBatchCount = 0;
+            }
         }
     }
 
-    ~NetworkSender() {
-        close(sock);
-    }
+    ~NetworkSender() { close(sock); }
 };
 
 @interface StreamOutput : NSObject <SCStreamOutput>
 @property (nonatomic, assign) NetworkSender* sender;
-@property (nonatomic, assign) std::vector<uint8_t>* compactBuffer;
+@property (nonatomic, assign) std::vector<uint8_t>* nv12Buffer;
 @end
 
 @implementation StreamOutput
 
 - (instancetype)init {
     self = [super init];
-    if (self) self.compactBuffer = new std::vector<uint8_t>();
+    if (self) self.nv12Buffer = new std::vector<uint8_t>();
     return self;
 }
-
 - (void)dealloc {
-    delete self.compactBuffer;
+    delete self.nv12Buffer;
+    [super dealloc];
 }
 
 - (void)stream:(SCStream *)stream didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer ofType:(SCStreamOutputType)type {
@@ -156,101 +153,90 @@ public:
 
     CVPixelBufferLockBaseAddress(pixelBuffer, kCVPixelBufferLock_ReadOnly);
 
-    uint8_t* srcBase = (uint8_t*)CVPixelBufferGetBaseAddress(pixelBuffer);
     size_t width = CVPixelBufferGetWidth(pixelBuffer);
     size_t height = CVPixelBufferGetHeight(pixelBuffer);
-    size_t srcBytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer);
 
-    size_t expectedSize = width * height * 4;
-    size_t dstBytesPerRow = width * 4;
+    uint8_t* yBase = (uint8_t*)CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, 0);
+    size_t yBytesPerRow = CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, 0);
 
-    if (self.compactBuffer->size() != expectedSize) {
-        self.compactBuffer->resize(expectedSize);
-    }
-    uint8_t* dstBase = self.compactBuffer->data();
+    uint8_t* uvBase = (uint8_t*)CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, 1);
+    size_t uvBytesPerRow = CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, 1);
+    size_t uvPlaneHeight = CVPixelBufferGetHeightOfPlane(pixelBuffer, 1);
 
-    // Copie ligne par ligne pour retirer le padding
-    for (size_t y = 0; y < height; ++y) {
-        memcpy(dstBase + (y * dstBytesPerRow),
-               srcBase + (y * srcBytesPerRow),
-               dstBytesPerRow);
+    size_t totalSize = (width * height) + (width * height / 2);
+
+    if (self.nv12Buffer->size() != totalSize) {
+        self.nv12Buffer->resize(totalSize);
     }
 
-    // Utilisation de la méthode dédiée UDP Frame
-    self.sender->sendFramePacket(dstBase, expectedSize, (uint16_t)width, (uint16_t)height);
+    uint8_t* dst = self.nv12Buffer->data();
 
+    // Copie Y
+    if (yBytesPerRow == width) {
+        memcpy(dst, yBase, width * height);
+    } else {
+        for (size_t i = 0; i < height; ++i) {
+            memcpy(dst + (i * width), yBase + (i * yBytesPerRow), width);
+        }
+    }
+
+    // Copie UV (Compactage)
+    uint8_t* dstUV = dst + (width * height);
+    if (uvBytesPerRow == width) {
+        memcpy(dstUV, uvBase, width * uvPlaneHeight);
+    } else {
+        for (size_t i = 0; i < uvPlaneHeight; ++i) {
+            memcpy(dstUV + (i * width), uvBase + (i * uvBytesPerRow), width);
+        }
+    }
+
+    self.sender->sendFramePacket(dst, totalSize, (uint16_t)width, (uint16_t)height);
     CVPixelBufferUnlockBaseAddress(pixelBuffer, kCVPixelBufferLock_ReadOnly);
 }
-
 @end
 
-void mouseThreadFunc(NetworkSender* sender) {
-    while (true) {
-        CGEventRef event = CGEventCreate(NULL);
-        CGPoint cursor = CGEventGetLocation(event);
-        CFRelease(event);
-
-        MousePacket mouseData;
-        mouseData.x = (int32_t)cursor.x;
-        mouseData.y = (int32_t)cursor.y;
-
-        // Utilisation de la méthode dédiée UDP Souris sur le port dédié
-        sender->sendMousePacket(mouseData);
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-}
-
 int main() {
-    // ---------------- CONFIGURATION IP ----------------
-    // Adresse IP de la machine Linux (Destination)
-    std::string linuxIP = "169.254.253.68";
+    setRealTimePriority(); // Boost Process
 
-    // Adresse IP de CE Mac sur l'interface Thunderbolt (Source)
-    // IMPORTANT : Changez ceci par l'IP réelle de votre Mac sur le pont Thunderbolt.
-    // Cela force le trafic à passer par le câble et non le Wi-Fi.
-    std::string macThunderboltIP = "169.254.222.155";
-    // --------------------------------------------------
+    NSProcessInfo *processInfo = [NSProcessInfo processInfo];
+    [processInfo beginActivityWithOptions:NSActivityUserInitiated | NSActivityLatencyCritical reason:@"Thunderbolt Stream"];
 
-    std::cout << "Initialisation UDP (Mode Thunderbolt MTU 9000)..." << std::endl;
-    std::cout << "Source (Mac)      : " << macThunderboltIP << std::endl;
-    std::cout << "Destination (Linux): " << linuxIP << std::endl;
+    // CONFIG IP
+    std::string linuxIP = "10.0.0.1";
+    std::string macIP = "10.0.0.2";
 
-    // Instance 1 : Socket Vidéo (Bind sur macIP)
-    NetworkSender* videoSender = new NetworkSender(linuxIP, PORT_VIDEO, macThunderboltIP);
+    std::cout << "Streaming (MTU 65k Mode) to " << linuxIP << "..." << std::endl;
 
-    // Instance 2 : Socket Souris (Bind sur macIP)
-    NetworkSender* mouseSender = new NetworkSender(linuxIP, PORT_MOUSE, macThunderboltIP);
-
-    // Lancement du thread souris avec son propre sender
-    std::thread mouseThread(mouseThreadFunc, mouseSender);
-    mouseThread.detach();
-
-    std::cout << "Init ScreenCaptureKit..." << std::endl;
+    NetworkSender* videoSender = new NetworkSender(linuxIP, PORT_VIDEO, macIP);
 
     [SCShareableContent getShareableContentWithCompletionHandler:^(SCShareableContent *content, NSError *error) {
         if (error) exit(1);
-
         SCDisplay *mainDisplay = content.displays[0];
         SCContentFilter *filter = [[SCContentFilter alloc] initWithDisplay:mainDisplay excludingApplications:@[] exceptingWindows:@[]];
 
         SCStreamConfiguration *config = [[SCStreamConfiguration alloc] init];
-        config.width = mainDisplay.width;
-        config.height = mainDisplay.height;
-        config.pixelFormat = kCVPixelFormatType_32BGRA;
-        config.showsCursor = NO;
-        config.queueDepth = 5;
+        config.width = 3840;
+        config.height = 2160;
+        config.scalesToFit = YES;
+        config.preservesAspectRatio = YES;
+
+        // --- CORRECTION COULEURS ---
+        // VideoRange : Évite les contrastes explosés (16-235)
+        config.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange;
+        // GenericRGB : Calme la saturation par rapport au P3 natif
+        config.colorSpaceName = kCGColorSpaceDisplayP3;
+
+
+
+        config.minimumFrameInterval = CMTimeMake(1, 60);
+        config.queueDepth = 3;
 
         SCStream *stream = [[SCStream alloc] initWithFilter:filter configuration:config delegate:nil];
         StreamOutput *output = [[StreamOutput alloc] init];
-
-        // On donne le sender Vidéo à l'output vidéo
         output.sender = videoSender;
 
         [stream addStreamOutput:output type:SCStreamOutputTypeScreen sampleHandlerQueue:dispatch_get_main_queue() error:nil];
         [stream startCaptureWithCompletionHandler:nil];
-
-        std::cout << "Streaming démarré: " << mainDisplay.width << "x" << mainDisplay.height << std::endl;
     }];
 
     CFRunLoopRun();
