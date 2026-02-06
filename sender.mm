@@ -1,6 +1,8 @@
 /*
- * MAC SENDER (Objective-C++) - FINAL GOLD VERSION
- * Optimisations: MTU 65k, Pacer V2, Color Correction, Mach RealTime
+ * MAC SENDER (Objective-C++) - INSTRUMENTED DEBUG VERSION
+ * Optimisations: MTU 65k, No-Pacer (Full Speed), QueueDepth=1, Logging
+ * Compile with:
+ * clang++ -o sender sender.mm -std=c++17 -framework Foundation -framework ScreenCaptureKit -framework CoreMedia -framework CoreVideo -framework ApplicationServices -O3
  */
 
 #include <iostream>
@@ -26,7 +28,6 @@
 #include <mach/thread_policy.h>
 
 #define PORT_VIDEO 5000
-// Optimisation MTU 65518 : On envoie des paquets géants (moins d'interruptions CPU)
 #define MAX_UDP_PAYLOAD 65000
 
 struct UDPFrameHeader {
@@ -57,6 +58,13 @@ private:
     std::mutex sendMutex;
     uint32_t frameCounter = 0;
 
+    // --- VARIABLES DE DEBUG ---
+    std::chrono::steady_clock::time_point lastLogTime = std::chrono::steady_clock::now();
+    uint64_t totalBytesSent = 0;
+    uint32_t framesSentLog = 0;
+    uint32_t eagainEvents = 0;
+    // --------------------------
+
 public:
     NetworkSender(const std::string& destIp, int port, const std::string& localIp) {
         sock = socket(AF_INET, SOCK_DGRAM, 0);
@@ -78,7 +86,29 @@ public:
 
     void sendFramePacket(const void* data, size_t size, uint16_t w, uint16_t h) {
         std::lock_guard<std::mutex> lock(sendMutex);
-        frameCounter++;
+
+        // --- LOGGING ---
+        framesSentLog++;
+        totalBytesSent += size;
+        frameCounter++; // ID réel de la frame
+
+        auto now = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastLogTime).count() >= 1000) {
+            double mbps = (totalBytesSent * 8.0) / (1000.0 * 1000.0);
+            double mbytes = totalBytesSent / (1024.0 * 1024.0);
+
+            std::cout << "[SENDER] FPS: " << framesSentLog
+                      << " | Rate: " << mbytes << " MB/s (" << mbps << " Mbps)"
+                      << " | BLOQUÉ (EAGAIN): " << eagainEvents
+                      << std::endl;
+
+            framesSentLog = 0;
+            totalBytesSent = 0;
+            eagainEvents = 0;
+            lastLogTime = now;
+        }
+        // ---------------
+
         size_t totalChunks = (size + MAX_UDP_PAYLOAD - 1) / MAX_UDP_PAYLOAD;
 
         UDPFrameHeader header;
@@ -96,8 +126,8 @@ public:
         msg.msg_iovlen = 2;
 
         uint8_t* byteData = (uint8_t*)data;
-        int packetsBatchCount = 0;
 
+        // BOUCLE D'ENVOI "FULL SPEED" (Sans Pacer artificiel)
         for (size_t i = 0; i < totalChunks; ++i) {
             size_t offset = i * MAX_UDP_PAYLOAD;
             size_t currentChunkSize = std::min((size_t)MAX_UDP_PAYLOAD, size - offset);
@@ -110,18 +140,16 @@ public:
             iov[1].iov_len = currentChunkSize;
 
             if (sendmsg(sock, &msg, 0) < 0) {
-                // Si buffer plein, petite pause d'urgence
+                // Si le Kernel dit "STOP", on obéit.
                 if (errno == EAGAIN || errno == EWOULDBLOCK || errno == ENOBUFS) {
-                    usleep(50);
-                    i--; // Retry
+                    eagainEvents++;
+                    usleep(1); // Micro-pause obligatoire pour laisser le buffer se vider
+                    i--; // On réessaie le même paquet
                     continue;
                 }
             }
-            packetsBatchCount++;
-            if (packetsBatchCount >= 4) {
-                usleep(1);
-                packetsBatchCount = 0;
-            }
+
+            // Pas de usleep() ici -> Vitesse Maximale
         }
     }
 
@@ -180,7 +208,7 @@ public:
         }
     }
 
-    // Copie UV (Compactage)
+    // Copie UV
     uint8_t* dstUV = dst + (width * height);
     if (uvBytesPerRow == width) {
         memcpy(dstUV, uvBase, width * uvPlaneHeight);
@@ -196,16 +224,16 @@ public:
 @end
 
 int main() {
-    setRealTimePriority(); // Boost Process
+    setRealTimePriority();
 
     NSProcessInfo *processInfo = [NSProcessInfo processInfo];
     [processInfo beginActivityWithOptions:NSActivityUserInitiated | NSActivityLatencyCritical reason:@"Thunderbolt Stream"];
 
-    // CONFIG IP
+    // CONFIGURATION IP
     std::string linuxIP = "10.0.0.1";
     std::string macIP = "10.0.0.2";
 
-    std::cout << "Streaming (MTU 65k Mode) to " << linuxIP << "..." << std::endl;
+    std::cout << "Streaming (MTU 65k Mode - Debug) to " << linuxIP << "..." << std::endl;
 
     NetworkSender* videoSender = new NetworkSender(linuxIP, PORT_VIDEO, macIP);
 
@@ -220,15 +248,13 @@ int main() {
         config.scalesToFit = YES;
         config.preservesAspectRatio = YES;
 
-        // --- CORRECTION COULEURS ---
-        // VideoRange : Évite les contrastes explosés (16-235)
+        // Couleur
         config.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange;
-        // GenericRGB : Calme la saturation par rapport au P3 natif
         config.colorSpaceName = kCGColorSpaceDisplayP3;
 
-
-
         config.minimumFrameInterval = CMTimeMake(1, 60);
+
+        // IMPORTANT POUR CLAVIER : 1 SEULE FRAME EN TAMPON MAX
         config.queueDepth = 3;
 
         SCStream *stream = [[SCStream alloc] initWithFilter:filter configuration:config delegate:nil];

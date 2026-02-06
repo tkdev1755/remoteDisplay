@@ -1,6 +1,8 @@
 /*
- * LINUX RECEIVER (C++ SDL2) - FINAL GOLD VERSION
- * Optimisations: Recvmmsg 64, MTU 65k, Busy Poll, Drain, Color Hack
+ * LINUX RECEIVER (C++ SDL2) - INSTRUMENTED DEBUG VERSION
+ * Optimisations: Recvmmsg 64, MTU 65k, Busy Poll, Drain 28MB
+ * Compile: g++ -o receiver receiver.cpp -lSDL2 -O3 -march=native
+ * Run: sudo taskset -c 2 chrt -f 50 ./receiver
  */
 
 #define _GNU_SOURCE
@@ -14,10 +16,11 @@
 #include <sys/ioctl.h>
 #include <fcntl.h>
 #include <SDL2/SDL.h>
+#include <chrono> // Pour le logging
 
 #define PORT 5000
-#define MAX_UDP_PAYLOAD 65000 // MTU 65k support
-#define VLEN 64 // Batch size
+#define MAX_UDP_PAYLOAD 65000
+#define VLEN 64
 
 struct __attribute__((packed)) UDPFrameHeader {
     uint32_t frameId;
@@ -29,33 +32,28 @@ struct __attribute__((packed)) UDPFrameHeader {
 };
 
 int main() {
-    // 1. INIT SDL AVEC CORRECTION COULEURS
-    // Hint Linear : Adoucit l'image (moins pixelisée/sharp)
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
-
     if (SDL_Init(SDL_INIT_VIDEO) < 0) return 1;
-
-    // Hack BT.601 : Force une matrice SD sur du contenu HD.
-    // Effet : Désature légèrement les couleurs -> Moins agressif.
     SDL_SetYUVConversionMode(SDL_YUV_CONVERSION_BT601);
 
     SDL_Window* window = SDL_CreateWindow(
-        "TBT RX", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 3840, 2160,
+        "TBT RX DEBUG", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 3840, 2160,
         SDL_WINDOW_SHOWN | SDL_WINDOW_BORDERLESS
     );
 
-    // Renderer SANS VSync pour latence minimale (Roue libre)
+    // Renderer SANS VSync
     SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
     SDL_Texture* texture = nullptr;
 
-    // 2. SOCKET OPTIMISÉ
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
 
-    // Buffer Kernel 40 Mo
+    // --- FORCE BUFFER 40MB ---
     int rcvbuf = 40 * 1024 * 1024;
-    setsockopt(sock, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
+    // On essaie de FORCER (root), sinon standard
+    if (setsockopt(sock, SOL_SOCKET, SO_RCVBUFFORCE, &rcvbuf, sizeof(rcvbuf)) < 0) {
+        setsockopt(sock, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
+    }
 
-    // Busy Poll : Empêche le process de dormir (Latence ultra-faible)
     int busy_poll = 50;
     setsockopt(sock, SOL_SOCKET, SO_BUSY_POLL, &busy_poll, sizeof(busy_poll));
 
@@ -68,7 +66,6 @@ int main() {
     addr.sin_port = htons(PORT);
     bind(sock, (struct sockaddr*)&addr, sizeof(addr));
 
-    // 3. STRUCTURES BATCHING (Static Alloc)
     std::vector<uint8_t> frameBuffer(15 * 1024 * 1024);
 
     struct mmsghdr msgs[VLEN];
@@ -91,19 +88,31 @@ int main() {
     bool running = true;
     SDL_Event event;
 
+    // --- VARIABLES DEBUG ---
+    auto lastLogTime = std::chrono::steady_clock::now();
+    uint32_t fpsCounter = 0;
+    uint32_t drainCounter = 0;
+    uint32_t frameLossCounter = 0;
+    uint32_t maxBytesInQueue = 0;
+
     SDL_ShowCursor(SDL_DISABLE);
-    std::cout << "🚀 Receiver MTU 65k Ready." << std::endl;
+    std::cout << "🚀 Receiver MTU 65k (DEBUG) Ready." << std::endl;
 
     while (running) {
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT || (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE)) running = false;
         }
 
-        // --- DRAIN LOGIC ---
+        // --- DRAIN LOGIC (Seuil Haut 28MB) ---
         int bytesAvailable;
         if (ioctl(sock, FIONREAD, &bytesAvailable) == 0) {
-            // Seuil augmenté à 30 Mo pour éviter les micro-saccades sur faux positifs
-            if (bytesAvailable > 16 * 1024 * 1024) {
+            if (bytesAvailable > (int)maxBytesInQueue) maxBytesInQueue = bytesAvailable; // Stats
+
+            // Seuil à 28 Mo pour tolérer les bursts de 2 frames
+            if (bytesAvailable > 28 * 1024 * 1024) {
+                // LOG LORS D'UN DRAIN
+                std::cout << "⚠️ [DRAIN] Buffer: " << (bytesAvailable/1024/1024) << "MB. Purge !" << std::endl;
+                drainCounter++;
                 while (bytesAvailable > 0) {
                     if (recvmmsg(sock, msgs, VLEN, 0, NULL) <= 0) break;
                     ioctl(sock, FIONREAD, &bytesAvailable);
@@ -122,6 +131,12 @@ int main() {
             int len = msgs[i].msg_len;
 
             if (header->frameId > currentFrameId || (currentFrameId - header->frameId) > 500) {
+                // Détection perte
+                if (currentFrameId != 0 && (header->frameId > currentFrameId + 1)) {
+                    frameLossCounter += (header->frameId - currentFrameId - 1);
+                    std::cout << "❌ SAUT D'IMAGE : Perdu " << (header->frameId - currentFrameId - 1) << " frames." << std::endl;
+                }
+
                 currentFrameId = header->frameId;
                 chunksReceived = 0;
                 expectedChunks = header->totalChunks;
@@ -147,8 +162,26 @@ int main() {
                     SDL_RenderClear(renderer);
                     SDL_RenderCopy(renderer, texture, NULL, NULL);
                     SDL_RenderPresent(renderer);
+
+                    fpsCounter++; // Compte la frame affichée
                 }
             }
+        }
+
+        // --- LOG SECONDE PAR SECONDE ---
+        auto now = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastLogTime).count() >= 1000) {
+            std::cout << "[RX] FPS: " << fpsCounter
+                      << " | Drain Events: " << drainCounter
+                      << " | Frame Loss: " << frameLossCounter
+                      << " | Max Buffer: " << (maxBytesInQueue / 1024.0 / 1024.0) << " MB"
+                      << std::endl;
+
+            fpsCounter = 0;
+            drainCounter = 0;
+            frameLossCounter = 0;
+            maxBytesInQueue = 0;
+            lastLogTime = now;
         }
     }
 
