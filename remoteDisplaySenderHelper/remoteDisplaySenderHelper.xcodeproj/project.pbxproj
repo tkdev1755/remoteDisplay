@@ -1,0 +1,653 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		10CF9EB22F4A0BBA00366459 /* sender in Copy sender executable */ = {isa = PBXBuildFile; fileRef = 10CF9EB02F4A0B8900366459 /* sender */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		105C516A2F44D84200CCB33B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 105C51522F44D84000CCB33B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 105C51592F44D84000CCB33B;
+			remoteInfo = remoteDisplaySenderHelper;
+		};
+		105C51742F44D84200CCB33B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 105C51522F44D84000CCB33B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 105C51592F44D84000CCB33B;
+			remoteInfo = remoteDisplaySenderHelper;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		10CF9EA62F4A06A800366459 /* Copy sender executable */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 7;
+			files = (
+				10CF9EB22F4A0BBA00366459 /* sender in Copy sender executable */,
+			);
+			name = "Copy sender executable";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		105C515A2F44D84000CCB33B /* remoteDisplaySenderHelper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = remoteDisplaySenderHelper.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		105C51692F44D84200CCB33B /* remoteDisplaySenderHelperTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = remoteDisplaySenderHelperTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		105C51732F44D84200CCB33B /* remoteDisplaySenderHelperUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = remoteDisplaySenderHelperUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		10CF9EB02F4A0B8900366459 /* sender */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; name = sender; path = "../../../Library/Developer/Xcode/DerivedData/remoteDisplaySenderHelper-gbboonsmvnjtfibmhywhmjnkaqrz/Build/Products/Debug/sender"; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		105C515C2F44D84000CCB33B /* remoteDisplaySenderHelper */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = remoteDisplaySenderHelper;
+			sourceTree = "<group>";
+		};
+		105C516C2F44D84200CCB33B /* remoteDisplaySenderHelperTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = remoteDisplaySenderHelperTests;
+			sourceTree = "<group>";
+		};
+		105C51762F44D84200CCB33B /* remoteDisplaySenderHelperUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = remoteDisplaySenderHelperUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		105C51572F44D84000CCB33B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		105C51662F44D84200CCB33B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		105C51702F44D84200CCB33B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		105C51512F44D84000CCB33B = {
+			isa = PBXGroup;
+			children = (
+				105C515C2F44D84000CCB33B /* remoteDisplaySenderHelper */,
+				105C516C2F44D84200CCB33B /* remoteDisplaySenderHelperTests */,
+				105C51762F44D84200CCB33B /* remoteDisplaySenderHelperUITests */,
+				10CF9EAF2F4A0B8900366459 /* Frameworks */,
+				105C515B2F44D84000CCB33B /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		105C515B2F44D84000CCB33B /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				105C515A2F44D84000CCB33B /* remoteDisplaySenderHelper.app */,
+				105C51692F44D84200CCB33B /* remoteDisplaySenderHelperTests.xctest */,
+				105C51732F44D84200CCB33B /* remoteDisplaySenderHelperUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		10CF9EAF2F4A0B8900366459 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				10CF9EB02F4A0B8900366459 /* sender */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		105C51592F44D84000CCB33B /* remoteDisplaySenderHelper */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 105C517D2F44D84200CCB33B /* Build configuration list for PBXNativeTarget "remoteDisplaySenderHelper" */;
+			buildPhases = (
+				105C51562F44D84000CCB33B /* Sources */,
+				105C51572F44D84000CCB33B /* Frameworks */,
+				10CF9EA52F4A067100366459 /* Run Script */,
+				10CF9EA62F4A06A800366459 /* Copy sender executable */,
+				105C51582F44D84000CCB33B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				105C515C2F44D84000CCB33B /* remoteDisplaySenderHelper */,
+			);
+			name = remoteDisplaySenderHelper;
+			packageProductDependencies = (
+			);
+			productName = remoteDisplaySenderHelper;
+			productReference = 105C515A2F44D84000CCB33B /* remoteDisplaySenderHelper.app */;
+			productType = "com.apple.product-type.application";
+		};
+		105C51682F44D84200CCB33B /* remoteDisplaySenderHelperTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 105C51802F44D84200CCB33B /* Build configuration list for PBXNativeTarget "remoteDisplaySenderHelperTests" */;
+			buildPhases = (
+				105C51652F44D84200CCB33B /* Sources */,
+				105C51662F44D84200CCB33B /* Frameworks */,
+				105C51672F44D84200CCB33B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				105C516B2F44D84200CCB33B /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				105C516C2F44D84200CCB33B /* remoteDisplaySenderHelperTests */,
+			);
+			name = remoteDisplaySenderHelperTests;
+			packageProductDependencies = (
+			);
+			productName = remoteDisplaySenderHelperTests;
+			productReference = 105C51692F44D84200CCB33B /* remoteDisplaySenderHelperTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		105C51722F44D84200CCB33B /* remoteDisplaySenderHelperUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 105C51832F44D84200CCB33B /* Build configuration list for PBXNativeTarget "remoteDisplaySenderHelperUITests" */;
+			buildPhases = (
+				105C516F2F44D84200CCB33B /* Sources */,
+				105C51702F44D84200CCB33B /* Frameworks */,
+				105C51712F44D84200CCB33B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				105C51752F44D84200CCB33B /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				105C51762F44D84200CCB33B /* remoteDisplaySenderHelperUITests */,
+			);
+			name = remoteDisplaySenderHelperUITests;
+			packageProductDependencies = (
+			);
+			productName = remoteDisplaySenderHelperUITests;
+			productReference = 105C51732F44D84200CCB33B /* remoteDisplaySenderHelperUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		105C51522F44D84000CCB33B /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2620;
+				LastUpgradeCheck = 2620;
+				TargetAttributes = {
+					105C51592F44D84000CCB33B = {
+						CreatedOnToolsVersion = 26.2;
+					};
+					105C51682F44D84200CCB33B = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = 105C51592F44D84000CCB33B;
+					};
+					105C51722F44D84200CCB33B = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = 105C51592F44D84000CCB33B;
+					};
+				};
+			};
+			buildConfigurationList = 105C51552F44D84000CCB33B /* Build configuration list for PBXProject "remoteDisplaySenderHelper" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 105C51512F44D84000CCB33B;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 105C515B2F44D84000CCB33B /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				105C51592F44D84000CCB33B /* remoteDisplaySenderHelper */,
+				105C51682F44D84200CCB33B /* remoteDisplaySenderHelperTests */,
+				105C51722F44D84200CCB33B /* remoteDisplaySenderHelperUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		105C51582F44D84000CCB33B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		105C51672F44D84200CCB33B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		105C51712F44D84200CCB33B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		10CF9EA52F4A067100366459 /* Run Script */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/senderCode/sender.mm",
+			);
+			name = "Run Script";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/sender",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Type a script or drag a script file from your workspace to insert its path.\n# 1. Définir le chemin vers ton fichier source (.mm)\n# Modifie \"TonDossier/sender.mm\" par le vrai chemin relatif dans ton projet\nSENDER_SRC=\"$SRCROOT/senderCode/sender.mm\"\n\n# 2. Définir où le fichier compilé doit être généré temporairement\n# On le place dans le dossier des produits de build (là où l'app est construite)\nOUTPUT_BINARY=\"$BUILT_PRODUCTS_DIR/sender\"\n\n# 3. Compiler le code Objective-C++ avec clang++\necho \"Compilation du programme sender...\"\n\n# Note : Ajoute ou retire des \"-framework\" selon les API qu'utilise ton sender\nclang++ -std=c++17 -O3 -framework Foundation -framework ScreenCaptureKit -framework CoreMedia -framework CoreVideo -framework ApplicationServices -o \"$OUTPUT_BINARY\" \"$SENDER_SRC\"\n\n# Vérification des erreurs\nif [ $? -ne 0 ]; then\n    echo \"error: La compilation du sender a échoué.\"\n    exit 1\nfi\n\necho \"Compilation réussie : $OUTPUT_BINARY\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		105C51562F44D84000CCB33B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		105C51652F44D84200CCB33B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		105C516F2F44D84200CCB33B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		105C516B2F44D84200CCB33B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 105C51592F44D84000CCB33B /* remoteDisplaySenderHelper */;
+			targetProxy = 105C516A2F44D84200CCB33B /* PBXContainerItemProxy */;
+		};
+		105C51752F44D84200CCB33B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 105C51592F44D84000CCB33B /* remoteDisplaySenderHelper */;
+			targetProxy = 105C51742F44D84200CCB33B /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		105C517B2F44D84200CCB33B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = VTW8983CQM;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.7;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		105C517C2F44D84200CCB33B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = VTW8983CQM;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.7;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		105C517E2F44D84200CCB33B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VTW8983CQM;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_USB = NO;
+				ENABLE_USER_SELECTED_FILES = readonly;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "This is needed to monitor the status of the Thunderbolt network interface";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tkapps.programs.remoteDisplaySenderHelper;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		105C517F2F44D84200CCB33B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VTW8983CQM;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_USB = NO;
+				ENABLE_USER_SELECTED_FILES = readonly;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "This is needed to monitor the status of the Thunderbolt network interface";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tkapps.programs.remoteDisplaySenderHelper;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		105C51812F44D84200CCB33B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VTW8983CQM;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.7;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tkapps.programs.remoteDisplaySenderHelperTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/remoteDisplaySenderHelper.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/remoteDisplaySenderHelper";
+			};
+			name = Debug;
+		};
+		105C51822F44D84200CCB33B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VTW8983CQM;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.7;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tkapps.programs.remoteDisplaySenderHelperTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/remoteDisplaySenderHelper.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/remoteDisplaySenderHelper";
+			};
+			name = Release;
+		};
+		105C51842F44D84200CCB33B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VTW8983CQM;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tkapps.programs.remoteDisplaySenderHelperUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = remoteDisplaySenderHelper;
+			};
+			name = Debug;
+		};
+		105C51852F44D84200CCB33B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VTW8983CQM;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tkapps.programs.remoteDisplaySenderHelperUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = remoteDisplaySenderHelper;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		105C51552F44D84000CCB33B /* Build configuration list for PBXProject "remoteDisplaySenderHelper" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				105C517B2F44D84200CCB33B /* Debug */,
+				105C517C2F44D84200CCB33B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		105C517D2F44D84200CCB33B /* Build configuration list for PBXNativeTarget "remoteDisplaySenderHelper" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				105C517E2F44D84200CCB33B /* Debug */,
+				105C517F2F44D84200CCB33B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		105C51802F44D84200CCB33B /* Build configuration list for PBXNativeTarget "remoteDisplaySenderHelperTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				105C51812F44D84200CCB33B /* Debug */,
+				105C51822F44D84200CCB33B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		105C51832F44D84200CCB33B /* Build configuration list for PBXNativeTarget "remoteDisplaySenderHelperUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				105C51842F44D84200CCB33B /* Debug */,
+				105C51852F44D84200CCB33B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 105C51522F44D84000CCB33B /* Project object */;
+}

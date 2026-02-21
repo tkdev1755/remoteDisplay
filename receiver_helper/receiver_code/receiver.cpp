@@ -16,11 +16,20 @@
 #include <sys/ioctl.h>
 #include <fcntl.h>
 #include <SDL2/SDL.h>
-#include <chrono> // Pour le logging
-
+#include <chrono>
+#include <sched.h>
+#include <cerrno>
+#include <cstring>
 #define PORT 5000
 #define MAX_UDP_PAYLOAD 65000
 #define VLEN 64
+#define DEBUG_COUT if(isDebugMode) std::cout
+
+// 1. Variable globale pour stocker l'état du debug
+bool isDebugMode = false;
+
+// 2. La macro magique.
+// Si isDebugMode est faux, l'instruction "if" échoue, et tout ce qui suit le << est ignoré à l'exécution.
 
 struct __attribute__((packed)) UDPFrameHeader {
     uint32_t frameId;
@@ -31,7 +40,37 @@ struct __attribute__((packed)) UDPFrameHeader {
     uint32_t totalSize;
 };
 
-int main() {
+int main(int argc, char* argv[]) {
+    for (int i = 1; i < argc; ++i) {
+            if (strcmp(argv[i], "--debug") == 0) {
+                isDebugMode = true;
+            }
+    }
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);       // On vide le masque
+    CPU_SET(2, &cpuset);
+    if (sched_setaffinity(0, sizeof(cpu_set_t), &cpuset) != 0) {
+            DEBUG_COUT << "⚠️ [Avertissement] Impossible de fixer l'affinité sur le coeur 2 : "
+                       << strerror(errno) << "\n";
+        } else {
+            DEBUG_COUT << "✅ Affinité CPU fixée sur le coeur 2.\n";
+    }
+
+    struct sched_param param;
+    param.sched_priority = 50; // Priorité de 1 (basse) à 99 (haute)
+
+    // SCHED_FIFO est la politique temps réel (First In, First Out)
+    if (sched_setscheduler(0, SCHED_FIFO, &param) != 0) {
+        DEBUG_COUT << "⚠️ [Avertissement] Échec du passage en priorité temps réel SCHED_FIFO : "
+                    << strerror(errno) << "\n"
+                    << "   -> Avez-vous oublié d'exécuter: sudo setcap 'cap_sys_nice=eip' <executable> ?\n";
+    } else {
+        DEBUG_COUT << "✅ Priorité temps réel (SCHED_FIFO, niveau 50) activée.\n";
+    }
+
+
+    std::ios_base::sync_with_stdio(false);
+    std::cin.tie(NULL);
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
     if (SDL_Init(SDL_INIT_VIDEO) < 0) return 1;
     SDL_SetYUVConversionMode(SDL_YUV_CONVERSION_BT601);
@@ -94,9 +133,10 @@ int main() {
     uint32_t drainCounter = 0;
     uint32_t frameLossCounter = 0;
     uint32_t maxBytesInQueue = 0;
-
+    auto lastPacketTime = std::chrono::steady_clock::now();
+    bool sleepSignalSent = false;
     SDL_ShowCursor(SDL_DISABLE);
-    std::cout << "🚀 Receiver MTU 65k (DEBUG) Ready." << std::endl;
+    DEBUG_COUT << "🚀 Receiver MTU 65k (DEBUG) Ready.\n";
 
     while (running) {
         while (SDL_PollEvent(&event)) {
@@ -111,7 +151,7 @@ int main() {
             // Seuil à 28 Mo pour tolérer les bursts de 2 frames
             if (bytesAvailable > 28 * 1024 * 1024) {
                 // LOG LORS D'UN DRAIN
-                std::cout << "⚠️ [DRAIN] Buffer: " << (bytesAvailable/1024/1024) << "MB. Purge !" << std::endl;
+                DEBUG_COUT << "⚠️ [DRAIN] Buffer: " << (bytesAvailable/1024/1024) << "MB. Purge !\n";
                 drainCounter++;
                 while (bytesAvailable > 0) {
                     if (recvmmsg(sock, msgs, VLEN, 0, NULL) <= 0) break;
@@ -123,8 +163,37 @@ int main() {
 
         // --- BATCH READ ---
         int numMsgs = recvmmsg(sock, msgs, VLEN, 0, NULL);
-        if (numMsgs <= 0) continue;
+        if (numMsgs > 0) {
+                    // On a reçu des paquets : on met à jour l'horloge et on réinitialise l'état
+                    lastPacketTime = std::chrono::steady_clock::now();
+                    if (sleepSignalSent) {
+                        DEBUG_COUT << "⚡️ Réception reprise. Réinitialisation du signal de veille.\n";
+                        sleepSignalSent = false;
+                    }
+                } else {
+                    // Aucun paquet reçu. Vérifions depuis combien de temps :
+                    auto now = std::chrono::steady_clock::now();
+                    auto durationWithoutPackets = std::chrono::duration_cast<std::chrono::seconds>(now - lastPacketTime).count();
 
+                    if (durationWithoutPackets >= 3 && !sleepSignalSent) {
+                        // 3 secondes atteintes : Envoi de l'alerte UDP
+                        int alertSock = socket(AF_INET, SOCK_DGRAM, 0);
+                        if (alertSock >= 0) {
+                            struct sockaddr_in destAddr = {0};
+                            destAddr.sin_family = AF_INET;
+                            destAddr.sin_port = htons(5002);
+                            inet_pton(AF_INET, "127.0.0.1", &destAddr.sin_addr);
+
+                            const char* alertMsg = "SLP_DETECTED";
+                            sendto(alertSock, alertMsg, strlen(alertMsg), 0, (struct sockaddr*)&destAddr, sizeof(destAddr));
+                            close(alertSock);
+
+                            DEBUG_COUT << "💤 TIMEOUT: 3s sans paquet. Signal 'SLP_DETECTED' envoyé sur 127.0.0.1:5002\n";
+                            sleepSignalSent = true; // On verrouille pour ne pas spammer
+                        }
+                    }
+                    continue; // Passe à l'itération suivante de la boucle principale
+                }
         for (int i = 0; i < numMsgs; i++) {
             UDPFrameHeader* header = (UDPFrameHeader*)packetBuffers[i];
             uint8_t* payload = packetBuffers[i] + sizeof(UDPFrameHeader);
@@ -134,7 +203,7 @@ int main() {
                 // Détection perte
                 if (currentFrameId != 0 && (header->frameId > currentFrameId + 1)) {
                     frameLossCounter += (header->frameId - currentFrameId - 1);
-                    std::cout << "❌ SAUT D'IMAGE : Perdu " << (header->frameId - currentFrameId - 1) << " frames." << std::endl;
+                    DEBUG_COUT << "❌ SAUT D'IMAGE : Perdu " << (header->frameId - currentFrameId - 1) << " frames.\n";
                 }
 
                 currentFrameId = header->frameId;
@@ -171,7 +240,7 @@ int main() {
         // --- LOG SECONDE PAR SECONDE ---
         auto now = std::chrono::steady_clock::now();
         if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastLogTime).count() >= 1000) {
-            std::cout << "[RX] FPS: " << fpsCounter
+            DEBUG_COUT << "[RX] FPS: " << fpsCounter
                       << " | Drain Events: " << drainCounter
                       << " | Frame Loss: " << frameLossCounter
                       << " | Max Buffer: " << (maxBytesInQueue / 1024.0 / 1024.0) << " MB"
