@@ -22,9 +22,7 @@ class NetworkUpdater {
         // 4. Envoi du paquet
         connection.send(content: data, completion: .contentProcessed { error in
             if let error = error {
-                print("❌ Erreur d'envoi UDP : \(error.localizedDescription)")
             } else {
-                print("✅ Message UDP '\(message)' envoyé avec succès à 10.0.0.1:5002")
             }
             
             // 5. Fermeture de la connexion (très important en UDP pour ne pas fuir la mémoire)

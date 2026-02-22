@@ -1,11 +1,20 @@
 import 'dart:io';
 
+import 'receiver_manager.dart';
+
 class SystemControlService {
+  ReceiverManager recvManager;
+  bool isSleeping = false;
+  SystemControlService(this.recvManager);
+
   Future<void> sleepScreen() async {
     try {
       // Try xset (X11)
-      await Process.run('xset', ['dpms', 'force', 'off']);
       print('Screen sleep command sent (xset)');
+      if (!isSleeping){
+        await Process.run('xrandr', ['--output', 'eDP', '--off']);        isSleeping = true;
+        await recvManager.suspendReceiver();
+      }
     } catch (e) {
       print('Error executing sleep command: $e');
     }
@@ -14,8 +23,12 @@ class SystemControlService {
   Future<void> wakeScreen() async {
     try {
       // Try xset (X11)
-      await Process.run('xset', ['dpms', 'force', 'on']);
-      print('Screen wake command sent (xset)');
+      print('Screen wake command received (xset)');
+      if (isSleeping){
+        await Process.run('xrandr', ['--output', 'eDP', '--auto']);
+        isSleeping = false;
+        await recvManager.resumeReceiver();
+      }
     } catch (e) {
       print('Error executing wake command: $e');
     }

@@ -102,11 +102,11 @@ public:
         std::lock_guard<std::mutex> lock(sendMutex);
 
         // On sauvegarde cette image pour le mode "Keep Alive"
-        if (lastFrameData.size() != size) lastFrameData.resize(size);
-        memcpy(lastFrameData.data(), data, size);
-        lastW = w;
-        lastH = h;
 
+        if (lastFrameData.size() != size) lastFrameData.resize(size);
+            memcpy(lastFrameData.data(), data, size);
+            lastW = w;
+            lastH = h;
         sendFramePacketInternal(data, size, w, h);
     }
 
@@ -214,8 +214,8 @@ int main() {
         config.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange;
         config.colorSpaceName = kCGColorSpaceDisplayP3;
 
-        config.minimumFrameInterval = CMTimeMake(1, 60);
-        config.queueDepth = 3; // On peut remettre un peu de buffer car le KeepAlive gère la fluidité
+        config.minimumFrameInterval = CMTimeMake(1, 120);
+        config.queueDepth = 5;
 
         SCStream *stream = [[SCStream alloc] initWithFilter:filter configuration:config delegate:nil];
         StreamOutput *output = [[StreamOutput alloc] init];

@@ -175,7 +175,7 @@ int main(int argc, char* argv[]) {
                     auto now = std::chrono::steady_clock::now();
                     auto durationWithoutPackets = std::chrono::duration_cast<std::chrono::seconds>(now - lastPacketTime).count();
 
-                    if (durationWithoutPackets >= 3 && !sleepSignalSent) {
+                    if (durationWithoutPackets >= 5 && !sleepSignalSent) {
                         // 3 secondes atteintes : Envoi de l'alerte UDP
                         int alertSock = socket(AF_INET, SOCK_DGRAM, 0);
                         if (alertSock >= 0) {

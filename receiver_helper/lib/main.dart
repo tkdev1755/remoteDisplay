@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_acrylic/window.dart';
+import 'package:flutter_acrylic/window_effect.dart';
 import 'package:window_manager/window_manager.dart';
 import 'services/udp_service.dart';
 import 'services/system_control_service.dart';
@@ -12,7 +14,7 @@ void main() async {
 
   receiverManager.startReceiver();
   WindowOptions windowOptions = const WindowOptions(
-    size: Size(400, 200),
+    size: Size(200, 200),
     center: true,
     backgroundColor: Colors.transparent,
     skipTaskbar: true,
@@ -22,18 +24,21 @@ void main() async {
 
   windowManager.waitUntilReadyToShow(windowOptions, () async {
     await windowManager.show();
+    await windowManager.setAsFrameless();
     await windowManager.focus();
+    await windowManager.setHasShadow(false);
     // For overlay, we effectively want to cover the screen or be a floating widget.
     // Here we start centered.
     // If full screen overlay is desired, uncomment:
     // await windowManager.setFullScreen(true);
   });
 
-  runApp(const MyApp());
+  runApp(MyApp(recvManager: receiverManager));
 }
 
 class MyApp extends StatefulWidget {
-  const MyApp({super.key});
+  ReceiverManager recvManager;
+  MyApp({super.key, required this.recvManager});
 
   @override
   State<MyApp> createState() => _MyAppState();
@@ -41,7 +46,9 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   final UDPService _udpService = UDPService();
-  final SystemControlService _systemControlService = SystemControlService();
+  late final SystemControlService _systemControlService = SystemControlService(
+    widget.recvManager,
+  );
 
   @override
   void initState() {
@@ -60,9 +67,9 @@ class _MyAppState extends State<MyApp> {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Receiver Helper',
+      color: Colors.transparent,
       theme: ThemeData(
-        visualDensity: VisualDensity.adaptivePlatformDensity,
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+        scaffoldBackgroundColor: Colors.transparent,
         useMaterial3: true,
       ),
       home: OverlayWidget(

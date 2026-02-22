@@ -10,7 +10,7 @@ import SwiftData
 
 @main
 struct remoteDisplaySenderHelperApp: App {
-    
+    @StateObject private var manager = ThunderboltManager()
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
         ])
@@ -27,7 +27,7 @@ struct remoteDisplaySenderHelperApp: App {
     var body: some Scene {
     
         MenuBarExtra("", systemImage : "circle"){
-            ContentView()
+            ContentView(manager: manager)
         }
         .menuBarExtraStyle(.window)
         

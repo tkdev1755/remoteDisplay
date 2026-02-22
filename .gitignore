@@ -100,3 +100,5 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+/remoteDisplaySenderHelper/remoteDisplaySenderHelper.xcodeproj/xcuserdata/
+/remoteDisplaySenderHelper/remoteDisplaySenderHelper.xcodeproj/project.xcworkspace/xcuserdata/
