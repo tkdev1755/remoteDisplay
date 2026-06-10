@@ -6,11 +6,35 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXAggregateTarget section */
+		100C36E52F5641E700367B9D /* Build PKG */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = 100C36E82F5641E700367B9D /* Build configuration list for PBXAggregateTarget "Build PKG" */;
+			buildPhases = (
+				100C36EB2F56424700367B9D /* ShellScript */,
+			);
+			dependencies = (
+				100C36EA2F56423E00367B9D /* PBXTargetDependency */,
+			);
+			name = "Build PKG";
+			packageProductDependencies = (
+			);
+			productName = "Build PKG";
+		};
+/* End PBXAggregateTarget section */
+
 /* Begin PBXBuildFile section */
 		10CF9EB22F4A0BBA00366459 /* sender in Copy sender executable */ = {isa = PBXBuildFile; fileRef = 10CF9EB02F4A0B8900366459 /* sender */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		100C36E92F56423E00367B9D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 105C51522F44D84000CCB33B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 105C51592F44D84000CCB33B;
+			remoteInfo = remoteDisplaySenderHelper;
+		};
 		105C516A2F44D84200CCB33B /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 105C51522F44D84000CCB33B /* Project object */;
@@ -203,6 +227,9 @@
 				LastSwiftUpdateCheck = 2620;
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
+					100C36E52F5641E700367B9D = {
+						CreatedOnToolsVersion = 26.3;
+					};
 					105C51592F44D84000CCB33B = {
 						CreatedOnToolsVersion = 26.2;
 					};
@@ -233,6 +260,7 @@
 				105C51592F44D84000CCB33B /* remoteDisplaySenderHelper */,
 				105C51682F44D84200CCB33B /* remoteDisplaySenderHelperTests */,
 				105C51722F44D84200CCB33B /* remoteDisplaySenderHelperUITests */,
+				100C36E52F5641E700367B9D /* Build PKG */,
 			);
 		};
 /* End PBXProject section */
@@ -262,6 +290,23 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		100C36EB2F56424700367B9D /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# 1. Variables\nAPP_NAME=\"remoteDisplaySenderHelper.app\"\nAPP_PATH=\"${BUILT_PRODUCTS_DIR}/${APP_NAME}\"\nPKG_NAME=\"ThunderboltSender_Install.pkg\"\nPKG_DEST=\"${BUILT_PRODUCTS_DIR}/${PKG_NAME}\"\n\n# Dossiers temporaires\nSCRIPTS_DIR=\"${TARGET_TEMP_DIR}/pkg_scripts\"\nPAYLOAD_DIR=\"${TARGET_TEMP_DIR}/pkg_payload\"\n\necho \"📦 Preparing to build PKG...\"\n\n# On s'assure que l'app a bien été compilée\nif [ ! -d \"$APP_PATH\" ]; then\n    echo \"error: App not found at $APP_PATH\"\n    exit 1\nfi\n\n\nrm -rf \"$PAYLOAD_DIR\"\nmkdir -p \"$PAYLOAD_DIR\"\ncp -R \"$APP_PATH\" \"$PAYLOAD_DIR/\"\n\n# 3. CRÉATION DES SCRIPTS\nrm -rf \"$SCRIPTS_DIR\"\nmkdir -p \"$SCRIPTS_DIR\"\n\ncat << 'EOF' > \"$SCRIPTS_DIR/postinstall\"\n#!/bin/bash\necho \"Configuring Thunderbolt Network...\"\n\nTB_SERVICE=$(networksetup -listallnetworkservices | grep -i \"bridge0\" | head -n 1 | xargs)\nif [ -z \"$TB_SERVICE\" ]; then\n    TB_SERVICE=$(networksetup -listallnetworkservices | grep -i \"Thunderbolt\" | head -n 1 | xargs)\nfi\n\nif [ -n \"$TB_SERVICE\" ]; then\n    networksetup -setmanual \"$TB_SERVICE\" 10.0.0.2 255.255.255.0 10.0.0.1\n    networksetup -setMTU \"$TB_SERVICE\" 65518\nfi\n\n\nexit 0\nEOF\n\nchmod +x \"$SCRIPTS_DIR/postinstall\"\n\npkgbuild --root \"$PAYLOAD_DIR\" \\\n         --install-location \"/Applications\" \\\n         --scripts \"$SCRIPTS_DIR\" \\\n         --identifier \"com.tkapps.programs.remoteDisplaySenderHelper\" \\\n         --version \"1.0\" \\\n         --ownership recommended \\\n         \"$PKG_DEST\"\n\necho \"✅ PKG successfully built at: $PKG_DEST\"\n";
+		};
 		10CF9EA52F4A067100366459 /* Run Script */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -309,6 +354,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		100C36EA2F56423E00367B9D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 105C51592F44D84000CCB33B /* remoteDisplaySenderHelper */;
+			targetProxy = 100C36E92F56423E00367B9D /* PBXContainerItemProxy */;
+		};
 		105C516B2F44D84200CCB33B /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 105C51592F44D84000CCB33B /* remoteDisplaySenderHelper */;
@@ -322,6 +372,26 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		100C36E62F5641E700367B9D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = VTW8983CQM;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		100C36E72F5641E700367B9D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = VTW8983CQM;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
 		105C517B2F44D84200CCB33B /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -611,6 +681,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		100C36E82F5641E700367B9D /* Build configuration list for PBXAggregateTarget "Build PKG" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				100C36E62F5641E700367B9D /* Debug */,
+				100C36E72F5641E700367B9D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		105C51552F44D84000CCB33B /* Build configuration list for PBXProject "remoteDisplaySenderHelper" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

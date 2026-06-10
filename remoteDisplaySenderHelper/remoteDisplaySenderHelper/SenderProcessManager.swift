@@ -23,7 +23,7 @@ class ExternalProgramManager {
                 object: nil,
                 queue: .main
             ) { [weak self] _ in
-                print("Fermeture de l'app détectée. Arrêt du sender...")
+                print("App is closing right now, killing sender process")
                 self?.stopSender()
             }
             
@@ -35,7 +35,7 @@ class ExternalProgramManager {
                 
                 let signalSource = DispatchSource.makeSignalSource(signal: sig, queue: .main)
                 signalSource.setEventHandler { [weak self] in
-                    print("Signal Unix \(sig) reçu ! Nettoyage d'urgence...")
+                    
                     
                     self?.stopSender()
                     
@@ -48,11 +48,9 @@ class ExternalProgramManager {
         stopSender()
         print("Stopped sender")
         guard let executableURL = Bundle.main.url(forResource: "sender", withExtension: nil) else {
-            print("Erreur : Impossible de trouver le programme 'sender' dans le Bundle.")
+            print("Error : Impossible to find the sender program in the app bundle")
             return
         }
-        print("Got executable URL")
-        // 2. Préparer le processus
         let process = Process()
         process.executableURL = executableURL
         
@@ -60,26 +58,24 @@ class ExternalProgramManager {
     
         
         senderProcess = process
-        // 5. Lancer le programme
+
         print("Now launching the process")
         do {
             try process.run()
         } catch {
-            print("Erreur lors de l'exécution du programme : \(error.localizedDescription)")
+            print("Error while launching the sender process : \(error.localizedDescription)")
         }
         print("process launched")
     }
     
     func stopSender(){
         if let process = senderProcess, process.isRunning {
-                    print("Arrêt du sender en cours...")
+                    print("Stopping the sender process")
                     
-                    // terminate() envoie un signal SIGTERM brutal au processus pour le tuer
                     process.terminate()
                     
-                    // Optionnel mais recommandé : on attend qu'il soit vraiment mort avant de continuer
                     process.waitUntilExit()
-                    print("🛑 Sender arrêté.")
+                    print("Sender process stopped")
         }
     }
     
