@@ -280,9 +280,24 @@ public:
 @end
 
 // Main function
-int main() {
+// Usage : sender [--display <CGDirectDisplayID>] [--width <px>] [--height <px>]
+//   Sans argument : capture l'écran principal à SA résolution native (pixels).
+//   --display : cible un écran précis (ex. l'écran virtuel BetterDisplay).
+//   --width/--height : force la résolution de capture (à éviter, casse le 1:1).
+int main(int argc, char **argv) {
   // Set the thread time constraint policy to prioritize real-time processing
   setRealTimePriority();
+
+  int forcedDisplayID = -1;
+  int forcedWidth = 0, forcedHeight = 0;
+  for (int i = 1; i < argc; ++i) {
+    if (strcmp(argv[i], "--display") == 0 && i + 1 < argc)
+      forcedDisplayID = atoi(argv[++i]);
+    else if (strcmp(argv[i], "--width") == 0 && i + 1 < argc)
+      forcedWidth = atoi(argv[++i]);
+    else if (strcmp(argv[i], "--height") == 0 && i + 1 < argc)
+      forcedHeight = atoi(argv[++i]);
+  }
   // Get the process information
   NSProcessInfo *processInfo = [NSProcessInfo processInfo];
   // Begin the activity with user-initiated and latency-critical options
@@ -305,14 +320,52 @@ int main() {
                           SCShareableContent *content, NSError *error) {
     if (error)
       exit(1);
-    SCDisplay *mainDisplay = content.displays[0];
+
+    // --- Sélection de l'écran cible ---
+    SCDisplay *mainDisplay = content.displays.firstObject;
+    if (forcedDisplayID > 0) {
+      for (SCDisplay *d in content.displays) {
+        if ((int)d.displayID == forcedDisplayID) {
+          mainDisplay = d;
+          break;
+        }
+      }
+    }
+    if (!mainDisplay)
+      exit(1);
+
+    // --- Résolution de capture ---
+    // Par défaut : résolution NATIVE en pixels (backing store) du mode courant
+    // de l'écran, pour une capture 1:1 sans rééchantillonnage interne à SCK.
+    // Forcer 3840x2160 sur une dalle 4096x2304 / 5120x2880 -> perte de netteté.
+    size_t capW = 0, capH = 0;
+    CGDisplayModeRef mode = CGDisplayCopyDisplayMode(mainDisplay.displayID);
+    if (mode) {
+      capW = CGDisplayModeGetPixelWidth(mode);
+      capH = CGDisplayModeGetPixelHeight(mode);
+      CGDisplayModeRelease(mode);
+    }
+    if (forcedWidth > 0 && forcedHeight > 0) {
+      capW = (size_t)forcedWidth;
+      capH = (size_t)forcedHeight;
+    }
+    if (capW == 0 || capH == 0) { // dernier repli
+      capW = 3840;
+      capH = 2160;
+    }
+    capW &= ~((size_t)1); // NV12 exige des dimensions paires
+    capH &= ~((size_t)1);
+
+    fprintf(stderr, "Capture display %u @ %zux%zu\n",
+            (unsigned)mainDisplay.displayID, capW, capH);
+
     SCContentFilter *filter =
         [[SCContentFilter alloc] initWithDisplay:mainDisplay
                            excludingApplications:@[]
                                 exceptingWindows:@[]];
     SCStreamConfiguration *config = [[SCStreamConfiguration alloc] init];
-    config.width = 3840;
-    config.height = 2160;
+    config.width = capW;
+    config.height = capH;
     config.scalesToFit = YES;
     config.preservesAspectRatio = YES;
 

@@ -41,9 +41,16 @@ struct __attribute__((packed)) UDPFrameHeader {
 };
 
 int main(int argc, char* argv[]) {
+    // --width/--height : force un mode d'affichage précis (ex. 4096 2304).
+    // Sans ça, on prend automatiquement le mode de plus haute définition proposé.
+    int forcedW = 0, forcedH = 0;
     for (int i = 1; i < argc; ++i) {
             if (strcmp(argv[i], "--debug") == 0) {
                 isDebugMode = true;
+            } else if (strcmp(argv[i], "--width") == 0 && i + 1 < argc) {
+                forcedW = atoi(argv[++i]);
+            } else if (strcmp(argv[i], "--height") == 0 && i + 1 < argc) {
+                forcedH = atoi(argv[++i]);
             }
     }
     cpu_set_t cpuset;
@@ -71,14 +78,57 @@ int main(int argc, char* argv[]) {
 
     std::ios_base::sync_with_stdio(false);
     std::cin.tie(NULL);
-    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
     if (SDL_Init(SDL_INIT_VIDEO) < 0) return 1;
     SDL_SetYUVConversionMode(SDL_YUV_CONVERSION_BT601);
 
+    // --- Choix du mode d'affichage ---
+    // On ne se contente PAS du mode courant du bureau (SDL_GetDesktopDisplayMode) :
+    // sur cet iMac 4K le mode natif 4096x2304 est ajouté via un Modeline Xorg et
+    // n'est pas forcément le mode actif. On énumère donc tous les modes et on
+    // retient la plus haute définition (ou celle demandée par --width/--height),
+    // puis on force un vrai modeset (SDL_WINDOW_FULLSCREEN).
+    SDL_DisplayMode targetMode;
+    SDL_zero(targetMode);
+    bool haveMode = false;
+    const int nModes = SDL_GetNumDisplayModes(0);
+    for (int m = 0; m < nModes; ++m) {
+        SDL_DisplayMode dm;
+        if (SDL_GetDisplayMode(0, m, &dm) != 0) continue;
+        if (forcedW > 0 && forcedH > 0) {
+            if (dm.w == forcedW && dm.h == forcedH &&
+                (!haveMode || dm.refresh_rate > targetMode.refresh_rate)) {
+                targetMode = dm;
+                haveMode = true;
+            }
+        } else if (!haveMode ||
+                   (long long)dm.w * dm.h > (long long)targetMode.w * targetMode.h) {
+            targetMode = dm;
+            haveMode = true;
+        }
+    }
+    if (!haveMode) {
+        if (SDL_GetDesktopDisplayMode(0, &targetMode) != 0) {
+            DEBUG_COUT << "⚠️ Aucun mode d'affichage exploitable : " << SDL_GetError()
+                       << " -> repli 3840x2160\n";
+            SDL_zero(targetMode);
+            targetMode.w = 3840;
+            targetMode.h = 2160;
+            targetMode.refresh_rate = 60;
+        }
+    }
+    const int panelW = targetMode.w;
+    const int panelH = targetMode.h;
+    DEBUG_COUT << "🖥️  Mode retenu : " << panelW << "x" << panelH
+               << " @ " << targetMode.refresh_rate << "Hz\n";
+
     SDL_Window* window = SDL_CreateWindow(
-        "TBT RX DEBUG", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 3840, 2160,
-        SDL_WINDOW_SHOWN | SDL_WINDOW_BORDERLESS
+        "TBT RX DEBUG", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, panelW, panelH,
+        SDL_WINDOW_SHOWN
     );
+    // Sélectionne le mode exact voulu sur la sortie AVANT de passer en plein
+    // écran, sinon SDL prendrait le mode le plus proche du bureau courant.
+    if (window && haveMode) SDL_SetWindowDisplayMode(window, &targetMode);
+    if (window) SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN);
 
     // Renderer SANS VSync
     SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
@@ -215,6 +265,17 @@ int main(int argc, char* argv[]) {
                     if (header->totalSize > frameBuffer.size()) frameBuffer.resize(header->totalSize);
 
                     if (texture) SDL_DestroyTexture(texture);
+                    // Échantillonnage : "0" (nearest) quand le flux arrive déjà à
+                    // la résolution native -> copie 1:1, zéro flou. "1" (linear)
+                    // seulement dans le cas dégradé où le flux n'est pas à la
+                    // bonne taille et doit être redimensionné.
+                    const bool nativeMatch = (currentWidth == panelW && currentHeight == panelH);
+                    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, nativeMatch ? "0" : "1");
+                    if (!nativeMatch) {
+                        DEBUG_COUT << "⚠️ Flux " << currentWidth << "x" << currentHeight
+                                   << " != dalle " << panelW << "x" << panelH
+                                   << " : mise à l'échelle active (perte de netteté).\n";
+                    }
                     texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_NV12, SDL_TEXTUREACCESS_STREAMING, currentWidth, currentHeight);
                 }
             }

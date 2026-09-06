@@ -69,7 +69,7 @@
 		105C515A2F44D84000CCB33B /* remoteDisplaySenderHelper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = remoteDisplaySenderHelper.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		105C51692F44D84200CCB33B /* remoteDisplaySenderHelperTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = remoteDisplaySenderHelperTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		105C51732F44D84200CCB33B /* remoteDisplaySenderHelperUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = remoteDisplaySenderHelperUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		10CF9EB02F4A0B8900366459 /* sender */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; name = sender; path = "../../../Library/Developer/Xcode/DerivedData/remoteDisplaySenderHelper-gbboonsmvnjtfibmhywhmjnkaqrz/Build/Products/Debug/sender"; sourceTree = "<group>"; };
+		10CF9EB02F4A0B8900366459 /* sender */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; name = sender; path = "../../../Library/Developer/Xcode/DerivedData/remoteDisplaySenderHelper-albzdvicoflnbldbefvevfcfigyf/Build/Products/Debug/sender"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -520,7 +520,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = VTW8983CQM;
+				DEVELOPMENT_TEAM = 82YP59YFWC;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
@@ -563,7 +563,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = VTW8983CQM;
+				DEVELOPMENT_TEAM = 82YP59YFWC;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
