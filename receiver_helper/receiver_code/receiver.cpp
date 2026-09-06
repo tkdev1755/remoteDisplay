@@ -53,6 +53,9 @@ int main(int argc, char* argv[]) {
                 forcedH = atoi(argv[++i]);
             }
     }
+    // Sans --width/--height forcés, le receiver recale la dalle sur la définition
+    // du flux à chaque changement (voir boucle principale).
+    const bool followStream = (forcedW <= 0 || forcedH <= 0);
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);       // On vide le masque
     CPU_SET(2, &cpuset);
@@ -116,19 +119,19 @@ int main(int argc, char* argv[]) {
             targetMode.refresh_rate = 60;
         }
     }
-    const int panelW = targetMode.w;
-    const int panelH = targetMode.h;
+    int panelW = targetMode.w;
+    int panelH = targetMode.h;
     DEBUG_COUT << "🖥️  Mode retenu : " << panelW << "x" << panelH
                << " @ " << targetMode.refresh_rate << "Hz\n";
 
     SDL_Window* window = SDL_CreateWindow(
         "TBT RX DEBUG", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, panelW, panelH,
-        SDL_WINDOW_SHOWN
+        SDL_WINDOW_FULLSCREEN | SDL_WINDOW_HIDDEN
     );
-    // Sélectionne le mode exact voulu sur la sortie AVANT de passer en plein
-    // écran, sinon SDL prendrait le mode le plus proche du bureau courant.
+    // Fixe le mode exact AVANT d'afficher la fenêtre, sinon SDL applique le mode
+    // le plus proche du mode courant. Valable pour x11 comme pour kmsdrm.
     if (window && haveMode) SDL_SetWindowDisplayMode(window, &targetMode);
-    if (window) SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN);
+    if (window) SDL_ShowWindow(window);
 
     // Renderer SANS VSync
     SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
@@ -264,6 +267,31 @@ int main(int argc, char* argv[]) {
                     currentWidth = header->width; currentHeight = header->height;
                     if (header->totalSize > frameBuffer.size()) frameBuffer.resize(header->totalSize);
 
+                    // Suivi automatique : si le flux change de définition et qu'un
+                    // mode KMS EXACT existe, on recale la dalle dessus (modeset).
+                    // Comme ça il suffit de changer la résolution côté Mac
+                    // (BetterDisplay) et le receiver suit, toujours en 1:1.
+                    if (followStream && (currentWidth != panelW || currentHeight != panelH)) {
+                        SDL_DisplayMode want; SDL_zero(want);
+                        want.w = currentWidth; want.h = currentHeight;
+                        SDL_DisplayMode got;
+                        if (SDL_GetClosestDisplayMode(0, &want, &got) &&
+                            got.w == currentWidth && got.h == currentHeight) {
+                            SDL_SetWindowFullscreen(window, 0);
+                            SDL_SetWindowSize(window, got.w, got.h);
+                            SDL_SetWindowDisplayMode(window, &got);
+                            SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN);
+                            DEBUG_COUT << "🔄 Tentative de recalage dalle -> " << got.w
+                                       << "x" << got.h << " @ " << got.refresh_rate << "Hz\n";
+                        }
+                        // Vérité terrain : on relit la taille réelle de la cible
+                        // de rendu (le modeset peut ne pas avoir abouti sous kmsdrm).
+                        int ow = panelW, oh = panelH;
+                        SDL_GetRendererOutputSize(renderer, &ow, &oh);
+                        if (ow > 0 && oh > 0) { panelW = ow; panelH = oh; }
+                        SDL_RenderSetLogicalSize(renderer, panelW, panelH);
+                    }
+
                     if (texture) SDL_DestroyTexture(texture);
                     // Échantillonnage : "0" (nearest) quand le flux arrive déjà à
                     // la résolution native -> copie 1:1, zéro flou. "1" (linear)
@@ -271,10 +299,17 @@ int main(int argc, char* argv[]) {
                     // bonne taille et doit être redimensionné.
                     const bool nativeMatch = (currentWidth == panelW && currentHeight == panelH);
                     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, nativeMatch ? "0" : "1");
-                    if (!nativeMatch) {
+                    if (nativeMatch) {
+                        DEBUG_COUT << "✅ Flux " << currentWidth << "x" << currentHeight
+                                   << " == dalle : rendu 1:1 plein écran.\n";
+                    } else if (currentWidth <= panelW && currentHeight <= panelH) {
+                        DEBUG_COUT << "ℹ️ Flux " << currentWidth << "x" << currentHeight
+                                   << " < dalle " << panelW << "x" << panelH
+                                   << " : rendu 1:1 centré (bandes noires), image nette.\n";
+                    } else {
                         DEBUG_COUT << "⚠️ Flux " << currentWidth << "x" << currentHeight
-                                   << " != dalle " << panelW << "x" << panelH
-                                   << " : mise à l'échelle active (perte de netteté).\n";
+                                   << " > dalle " << panelW << "x" << panelH
+                                   << " : réduction d'échelle (perte de netteté).\n";
                     }
                     texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_NV12, SDL_TEXTUREACCESS_STREAMING, currentWidth, currentHeight);
                 }
@@ -290,7 +325,18 @@ int main(int argc, char* argv[]) {
                 if (chunksReceived >= expectedChunks && texture) {
                     SDL_UpdateTexture(texture, NULL, frameBuffer.data(), currentWidth);
                     SDL_RenderClear(renderer);
-                    SDL_RenderCopy(renderer, texture, NULL, NULL);
+                    // Blit 1:1 : jamais d'étirement bilinéaire. Si le flux est
+                    // plus petit que la dalle (modeset non appliqué), on le
+                    // centre avec des bandes noires plutôt que de le rendre flou.
+                    if (currentWidth <= panelW && currentHeight <= panelH) {
+                        SDL_Rect dst;
+                        dst.w = currentWidth; dst.h = currentHeight;
+                        dst.x = (panelW - currentWidth) / 2;
+                        dst.y = (panelH - currentHeight) / 2;
+                        SDL_RenderCopy(renderer, texture, NULL, &dst);
+                    } else {
+                        SDL_RenderCopy(renderer, texture, NULL, NULL);
+                    }
                     SDL_RenderPresent(renderer);
 
                     fpsCounter++; // Compte la frame affichée
