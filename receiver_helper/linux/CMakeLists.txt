@@ -130,13 +130,15 @@ endif()
 # 1. On trouve la librairie SDL2 requise par ton code
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SDL2 REQUIRED sdl2)
+find_package(Threads REQUIRED)  # receiver.cpp est multithread (thread réseau + affichage)
 
 # 2. On déclare ton exécutable récepteur
 add_executable(receiver_app "${CMAKE_SOURCE_DIR}/../receiver_code/receiver.cpp")
+target_compile_features(receiver_app PRIVATE cxx_std_17)
 
-# 3. On lie SDL2 à ton exécutable
+# 3. On lie SDL2 (+ pthread) à ton exécutable
 target_link_directories(receiver_app PRIVATE ${SDL2_LIBRARY_DIRS})
-target_link_libraries(receiver_app PRIVATE ${SDL2_LIBRARIES})
+target_link_libraries(receiver_app PRIVATE ${SDL2_LIBRARIES} Threads::Threads)
 target_include_directories(receiver_app PRIVATE ${SDL2_INCLUDE_DIRS})
 
 # 4. On demande à CMake d'installer l'exécutable dans le dossier final de l'app Flutter

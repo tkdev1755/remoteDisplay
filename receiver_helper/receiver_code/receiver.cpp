@@ -1,35 +1,59 @@
 /*
- * LINUX RECEIVER (C++ SDL2) - INSTRUMENTED DEBUG VERSION
- * Optimisations: Recvmmsg 64, MTU 65k, Busy Poll, Drain 28MB
- * Compile: g++ -o receiver receiver.cpp -lSDL2 -O3 -march=native
- * Run: sudo taskset -c 2 chrt -f 50 ./receiver
+ * LINUX RECEIVER (C++ SDL2) - VERSION MULTITHREAD
+ *
+ * Architecture :
+ *   - Thread RÉSEAU (coeur NET_CPU, SCHED_FIFO 50) : ne fait QUE lire le socket
+ *     et réassembler les frames. Ne bloque jamais sur l'affichage.
+ *   - Thread AFFICHAGE = main (coeur DISPLAY_CPU, SCHED_FIFO 20) : récupère la
+ *     dernière frame complète et la présente, synchronisé sur le vblank (VSync).
+ *   - Échange via une "boîte aux lettres" triple-tampon : le producteur écrit
+ *     dans un slot, le consommateur lit un autre, le 3e sert de zone de passage.
+ *     Le consommateur voit toujours la frame la plus fraîche ; les frames
+ *     intermédiaires (source 120 fps vs dalle 60 Hz) sont jetées sans douleur.
+ *
+ * Résultat : plus de tearing (présentation calée vblank) et plus d'à-coups de
+ * drain (le socket est vidé en continu, il ne se remplit plus pendant qu'on rend).
+ *
+ * Compile : g++ -o receiver receiver.cpp -lSDL2 -O3 -march=native -pthread
+ * Run     : sudo ./receiver --debug        (root ou setcap cap_sys_nice=eip)
  */
 
 #define _GNU_SOURCE
-#include <iostream>
-#include <vector>
-#include <cstring>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <sys/ioctl.h>
-#include <fcntl.h>
-#include <SDL2/SDL.h>
-#include <chrono>
-#include <sched.h>
+#include <array>
+#include <atomic>
 #include <cerrno>
+#include <chrono>
 #include <cstring>
+#include <iostream>
+#include <mutex>
+#include <thread>
+#include <vector>
+
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <netinet/in.h>
+#include <sched.h>
+#include <sys/ioctl.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+#include <SDL2/SDL.h>
+
 #define PORT 5000
 #define MAX_UDP_PAYLOAD 65000
 #define VLEN 64
-#define DEBUG_COUT if(isDebugMode) std::cout
+#define NET_CPU 2      // coeur dédié à la réception réseau
+#define DISPLAY_CPU 3  // coeur dédié à l'affichage
+// Borne haute d'une frame NV12 : 5120x2880 * 1.5 -> ~21 Mio. Les 3 slots sont
+// alloués à cette taille une fois pour toutes : zéro realloc en cours de flux.
+#define MAX_FRAME_BYTES (5120 * 2880 * 3 / 2)
+#define DRAIN_THRESHOLD (28 * 1024 * 1024)
 
-// 1. Variable globale pour stocker l'état du debug
+#define DEBUG_COUT      \
+    if (isDebugMode)    \
+    std::cout
+
 bool isDebugMode = false;
-
-// 2. La macro magique.
-// Si isDebugMode est faux, l'instruction "if" échoue, et tout ce qui suit le << est ignoré à l'exécution.
 
 struct __attribute__((packed)) UDPFrameHeader {
     uint32_t frameId;
@@ -40,56 +64,251 @@ struct __attribute__((packed)) UDPFrameHeader {
     uint32_t totalSize;
 };
 
+// ---------------------------------------------------------------------------
+// Boîte aux lettres triple-tampon (single-producer / single-consumer)
+// ---------------------------------------------------------------------------
+class FrameMailbox {
+public:
+    struct Slot {
+        std::vector<uint8_t> data;
+        int w = 0, h = 0;
+        uint32_t frameId = 0;
+    };
+
+    FrameMailbox() {
+        for (auto& s : slots_) s.data.resize(MAX_FRAME_BYTES);
+    }
+
+    // --- côté producteur (thread réseau) ---
+    Slot& writeSlot() { return slots_[write_]; }
+
+    void publish(int w, int h, uint32_t id) {
+        std::lock_guard<std::mutex> lk(mtx_);
+        slots_[write_].w = w;
+        slots_[write_].h = h;
+        slots_[write_].frameId = id;
+        std::swap(write_, ready_);
+        fresh_ = true;
+    }
+
+    // --- côté consommateur (thread affichage) ---
+    // true si une nouvelle frame vient d'être basculée dans readSlot()
+    bool tryAcquire() {
+        std::lock_guard<std::mutex> lk(mtx_);
+        if (!fresh_) return false;
+        std::swap(read_, ready_);
+        fresh_ = false;
+        return true;
+    }
+    Slot& readSlot() { return slots_[read_]; }
+
+private:
+    std::array<Slot, 3> slots_;
+    std::mutex mtx_;
+    int write_ = 0, ready_ = 1, read_ = 2; // toujours une permutation de {0,1,2}
+    bool fresh_ = false;
+};
+
+// ---------------------------------------------------------------------------
+// Compteurs de stats partagés entre les deux threads
+// ---------------------------------------------------------------------------
+struct Stats {
+    std::atomic<uint32_t> producedFrames{0};
+    std::atomic<uint32_t> drainEvents{0};
+    std::atomic<uint32_t> lostFrames{0};
+    std::atomic<uint32_t> maxQueueBytes{0};
+};
+
+// ---------------------------------------------------------------------------
+// Épingle le thread courant sur un coeur + priorité temps réel SCHED_FIFO
+// ---------------------------------------------------------------------------
+static void pinThread(int cpu, int rtPrio, const char* label) {
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    CPU_SET(cpu, &set);
+    if (sched_setaffinity(0, sizeof(set), &set) != 0) {
+        DEBUG_COUT << "⚠️ [" << label << "] affinité coeur " << cpu << " : "
+                   << strerror(errno) << "\n";
+    } else {
+        DEBUG_COUT << "✅ [" << label << "] épinglé coeur " << cpu << "\n";
+    }
+
+    struct sched_param sp;
+    sp.sched_priority = rtPrio;
+    if (sched_setscheduler(0, SCHED_FIFO, &sp) != 0) {
+        DEBUG_COUT << "⚠️ [" << label << "] SCHED_FIFO " << rtPrio << " : "
+                   << strerror(errno) << " (setcap cap_sys_nice=eip ?)\n";
+    } else {
+        DEBUG_COUT << "✅ [" << label << "] SCHED_FIFO prio " << rtPrio << "\n";
+    }
+}
+
+// ---------------------------------------------------------------------------
+// THREAD RÉSEAU : lit le socket, réassemble, publie les frames complètes.
+// ---------------------------------------------------------------------------
+static void networkThread(FrameMailbox& mailbox, Stats& stats,
+                          std::atomic<bool>& running) {
+    pinThread(NET_CPU, 50, "net");
+
+    int sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock < 0) {
+        DEBUG_COUT << "❌ socket() : " << strerror(errno) << "\n";
+        running = false;
+        return;
+    }
+
+    int rcvbuf = 40 * 1024 * 1024;
+    if (setsockopt(sock, SOL_SOCKET, SO_RCVBUFFORCE, &rcvbuf, sizeof(rcvbuf)) < 0)
+        setsockopt(sock, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
+
+    int busy = 50;
+    setsockopt(sock, SOL_SOCKET, SO_BUSY_POLL, &busy, sizeof(busy));
+
+    struct timeval tv = {1, 0}; // recvmmsg rend la main au moins 1x/s
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+    struct sockaddr_in addr = {};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_port = htons(PORT);
+    if (bind(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+        DEBUG_COUT << "❌ bind() : " << strerror(errno) << "\n";
+        close(sock);
+        running = false;
+        return;
+    }
+
+    // Buffers recvmmsg : VLEN datagrammes récupérés par appel.
+    const size_t PKTSZ = MAX_UDP_PAYLOAD + sizeof(UDPFrameHeader);
+    std::vector<uint8_t> pktbuf(VLEN * PKTSZ); // sur le tas, pas sur la pile
+    struct mmsghdr msgs[VLEN];
+    struct iovec iovecs[VLEN];
+    for (int i = 0; i < VLEN; ++i) {
+        memset(&msgs[i], 0, sizeof(msgs[i]));
+        iovecs[i].iov_base = pktbuf.data() + i * PKTSZ;
+        iovecs[i].iov_len = PKTSZ;
+        msgs[i].msg_hdr.msg_iov = &iovecs[i];
+        msgs[i].msg_hdr.msg_iovlen = 1;
+    }
+
+    // État de réassemblage de la frame en cours.
+    uint32_t curId = 0;
+    int chunks = 0, expected = 0;
+    int curW = 0, curH = 0;
+    bool published = false;
+
+    auto lastPacket = std::chrono::steady_clock::now();
+    bool slpSent = false;
+
+    while (running) {
+        // --- Drain : si le buffer noyau enfle trop, on purge et on repart neuf ---
+        int avail = 0;
+        if (ioctl(sock, FIONREAD, &avail) == 0) {
+            if ((uint32_t)avail > stats.maxQueueBytes.load())
+                stats.maxQueueBytes.store(avail);
+            if (avail > DRAIN_THRESHOLD) {
+                stats.drainEvents.fetch_add(1);
+                while (avail > 0) {
+                    if (recvmmsg(sock, msgs, VLEN, MSG_DONTWAIT, nullptr) <= 0) break;
+                    ioctl(sock, FIONREAD, &avail);
+                }
+                curId = 0;
+                chunks = 0;
+                published = false;
+                continue;
+            }
+        }
+
+        // --- Lecture par lot ---
+        int n = recvmmsg(sock, msgs, VLEN, 0, nullptr);
+        if (n <= 0) {
+            // Timeout : aucun paquet. Après 5 s -> signal de veille au helper.
+            auto now = std::chrono::steady_clock::now();
+            auto silent =
+                std::chrono::duration_cast<std::chrono::seconds>(now - lastPacket)
+                    .count();
+            if (silent >= 5 && !slpSent) {
+                int a = socket(AF_INET, SOCK_DGRAM, 0);
+                if (a >= 0) {
+                    struct sockaddr_in d = {};
+                    d.sin_family = AF_INET;
+                    d.sin_port = htons(5002);
+                    inet_pton(AF_INET, "127.0.0.1", &d.sin_addr);
+                    const char* m = "SLP_DETECTED";
+                    sendto(a, m, strlen(m), 0, (struct sockaddr*)&d, sizeof(d));
+                    close(a);
+                    DEBUG_COUT << "💤 5 s sans paquet -> SLP_DETECTED\n";
+                    slpSent = true;
+                }
+            }
+            continue;
+        }
+        lastPacket = std::chrono::steady_clock::now();
+        slpSent = false;
+
+        for (int i = 0; i < n; ++i) {
+            auto* h = reinterpret_cast<UDPFrameHeader*>(iovecs[i].iov_base);
+            uint8_t* payload =
+                (uint8_t*)iovecs[i].iov_base + sizeof(UDPFrameHeader);
+            int plen = (int)msgs[i].msg_len - (int)sizeof(UDPFrameHeader);
+            if (plen < 0) continue;
+
+            // Début d'une nouvelle frame ? (id plus grand, ou grand écart = reset)
+            if (h->frameId > curId || (curId - h->frameId) > 500) {
+                if (curId != 0 && h->frameId > curId + 1)
+                    stats.lostFrames.fetch_add(h->frameId - curId - 1);
+                curId = h->frameId;
+                chunks = 0;
+                expected = h->totalChunks;
+                curW = h->width;
+                curH = h->height;
+                published = false;
+            }
+
+            if (h->frameId != curId || published) continue; // chunk hors sujet
+
+            size_t off = (size_t)h->chunkId * MAX_UDP_PAYLOAD;
+            std::vector<uint8_t>& wb = mailbox.writeSlot().data;
+            if (off + (size_t)plen <= wb.size()) {
+                memcpy(wb.data() + off, payload, plen);
+                chunks++;
+            }
+
+            // Frame complète -> on la publie (bascule de slot) et on passe à la suite
+            if (expected > 0 && chunks >= expected) {
+                mailbox.publish(curW, curH, curId);
+                stats.producedFrames.fetch_add(1);
+                published = true;
+            }
+        }
+    }
+
+    close(sock);
+}
+
+// ---------------------------------------------------------------------------
+// MAIN = THREAD AFFICHAGE
+// ---------------------------------------------------------------------------
 int main(int argc, char* argv[]) {
-    // --width/--height : force un mode d'affichage précis (ex. 4096 2304).
-    // Sans ça, on prend automatiquement le mode de plus haute définition proposé.
     int forcedW = 0, forcedH = 0;
     for (int i = 1; i < argc; ++i) {
-            if (strcmp(argv[i], "--debug") == 0) {
-                isDebugMode = true;
-            } else if (strcmp(argv[i], "--width") == 0 && i + 1 < argc) {
-                forcedW = atoi(argv[++i]);
-            } else if (strcmp(argv[i], "--height") == 0 && i + 1 < argc) {
-                forcedH = atoi(argv[++i]);
-            }
+        if (strcmp(argv[i], "--debug") == 0)
+            isDebugMode = true;
+        else if (strcmp(argv[i], "--width") == 0 && i + 1 < argc)
+            forcedW = atoi(argv[++i]);
+        else if (strcmp(argv[i], "--height") == 0 && i + 1 < argc)
+            forcedH = atoi(argv[++i]);
     }
-    // Sans --width/--height forcés, le receiver recale la dalle sur la définition
-    // du flux à chaque changement (voir boucle principale).
     const bool followStream = (forcedW <= 0 || forcedH <= 0);
-    cpu_set_t cpuset;
-    CPU_ZERO(&cpuset);       // On vide le masque
-    CPU_SET(2, &cpuset);
-    if (sched_setaffinity(0, sizeof(cpu_set_t), &cpuset) != 0) {
-            DEBUG_COUT << "⚠️ [Avertissement] Impossible de fixer l'affinité sur le coeur 2 : "
-                       << strerror(errno) << "\n";
-        } else {
-            DEBUG_COUT << "✅ Affinité CPU fixée sur le coeur 2.\n";
-    }
-
-    struct sched_param param;
-    param.sched_priority = 50; // Priorité de 1 (basse) à 99 (haute)
-
-    // SCHED_FIFO est la politique temps réel (First In, First Out)
-    if (sched_setscheduler(0, SCHED_FIFO, &param) != 0) {
-        DEBUG_COUT << "⚠️ [Avertissement] Échec du passage en priorité temps réel SCHED_FIFO : "
-                    << strerror(errno) << "\n"
-                    << "   -> Avez-vous oublié d'exécuter: sudo setcap 'cap_sys_nice=eip' <executable> ?\n";
-    } else {
-        DEBUG_COUT << "✅ Priorité temps réel (SCHED_FIFO, niveau 50) activée.\n";
-    }
-
 
     std::ios_base::sync_with_stdio(false);
-    std::cin.tie(NULL);
     if (SDL_Init(SDL_INIT_VIDEO) < 0) return 1;
-    SDL_SetYUVConversionMode(SDL_YUV_CONVERSION_BT601);
 
-    // --- Choix du mode d'affichage ---
-    // On ne se contente PAS du mode courant du bureau (SDL_GetDesktopDisplayMode) :
-    // sur cet iMac 4K le mode natif 4096x2304 est ajouté via un Modeline Xorg et
-    // n'est pas forcément le mode actif. On énumère donc tous les modes et on
-    // retient la plus haute définition (ou celle demandée par --width/--height),
-    // puis on force un vrai modeset (SDL_WINDOW_FULLSCREEN).
+    // Matrice de conversion YCbCr->RGB : Rec.709 (cf. sender en Display P3).
+    SDL_SetYUVConversionMode(SDL_YUV_CONVERSION_BT709);
+
+    // --- Choix du mode d'affichage : on prend la plus haute définition offerte
+    //     (ou celle forcée), puis un vrai modeset via SDL_WINDOW_FULLSCREEN. ---
     SDL_DisplayMode targetMode;
     SDL_zero(targetMode);
     bool haveMode = false;
@@ -103,16 +322,14 @@ int main(int argc, char* argv[]) {
                 targetMode = dm;
                 haveMode = true;
             }
-        } else if (!haveMode ||
-                   (long long)dm.w * dm.h > (long long)targetMode.w * targetMode.h) {
+        } else if (!haveMode || (long long)dm.w * dm.h >
+                                    (long long)targetMode.w * targetMode.h) {
             targetMode = dm;
             haveMode = true;
         }
     }
     if (!haveMode) {
         if (SDL_GetDesktopDisplayMode(0, &targetMode) != 0) {
-            DEBUG_COUT << "⚠️ Aucun mode d'affichage exploitable : " << SDL_GetError()
-                       << " -> repli 3840x2160\n";
             SDL_zero(targetMode);
             targetMode.w = 3840;
             targetMode.h = 2160;
@@ -121,250 +338,133 @@ int main(int argc, char* argv[]) {
     }
     int panelW = targetMode.w;
     int panelH = targetMode.h;
-    DEBUG_COUT << "🖥️  Mode retenu : " << panelW << "x" << panelH
-               << " @ " << targetMode.refresh_rate << "Hz\n";
+    DEBUG_COUT << "🖥️  Mode retenu : " << panelW << "x" << panelH << " @ "
+               << targetMode.refresh_rate << "Hz\n";
 
     SDL_Window* window = SDL_CreateWindow(
-        "TBT RX DEBUG", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, panelW, panelH,
-        SDL_WINDOW_FULLSCREEN | SDL_WINDOW_HIDDEN
-    );
-    // Fixe le mode exact AVANT d'afficher la fenêtre, sinon SDL applique le mode
-    // le plus proche du mode courant. Valable pour x11 comme pour kmsdrm.
+        "TBT RX", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, panelW, panelH,
+        SDL_WINDOW_FULLSCREEN | SDL_WINDOW_HIDDEN);
     if (window && haveMode) SDL_SetWindowDisplayMode(window, &targetMode);
     if (window) SDL_ShowWindow(window);
 
-    // Renderer SANS VSync
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+    // Renderer AVEC VSync : SDL_RenderPresent bloquera jusqu'au page-flip vblank.
+    // Possible sans à-coups uniquement parce que la réception vit dans un autre
+    // thread (elle continue de vider le socket pendant qu'on attend le vblank).
+    SDL_Renderer* renderer = SDL_CreateRenderer(
+        window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+
     SDL_Texture* texture = nullptr;
+    int texW = 0, texH = 0;
 
-    int sock = socket(AF_INET, SOCK_DGRAM, 0);
+    // (Re)configure la sortie quand la définition du flux change.
+    auto applyStreamResolution = [&](int w, int h) {
+        if (followStream && (w != panelW || h != panelH)) {
+            SDL_DisplayMode want;
+            SDL_zero(want);
+            want.w = w;
+            want.h = h;
+            SDL_DisplayMode got;
+            if (SDL_GetClosestDisplayMode(0, &want, &got) && got.w == w &&
+                got.h == h) {
+                SDL_SetWindowFullscreen(window, 0);
+                SDL_SetWindowSize(window, got.w, got.h);
+                SDL_SetWindowDisplayMode(window, &got);
+                SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN);
+                DEBUG_COUT << "🔄 Recalage dalle -> " << got.w << "x" << got.h
+                           << " @ " << got.refresh_rate << "Hz\n";
+            }
+            int ow = panelW, oh = panelH;
+            SDL_GetRendererOutputSize(renderer, &ow, &oh);
+            if (ow > 0 && oh > 0) {
+                panelW = ow;
+                panelH = oh;
+            }
+            SDL_RenderSetLogicalSize(renderer, panelW, panelH);
+        }
 
-    // --- FORCE BUFFER 40MB ---
-    int rcvbuf = 40 * 1024 * 1024;
-    // On essaie de FORCER (root), sinon standard
-    if (setsockopt(sock, SOL_SOCKET, SO_RCVBUFFORCE, &rcvbuf, sizeof(rcvbuf)) < 0) {
-        setsockopt(sock, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
-    }
+        const bool match = (w == panelW && h == panelH);
+        SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, match ? "0" : "1");
+        if (match) {
+            DEBUG_COUT << "✅ Flux " << w << "x" << h
+                       << " == dalle : 1:1 plein écran.\n";
+        } else if (w <= panelW && h <= panelH) {
+            DEBUG_COUT << "ℹ️ Flux " << w << "x" << h << " < dalle : 1:1 centré.\n";
+        } else {
+            DEBUG_COUT << "⚠️ Flux " << w << "x" << h << " > dalle : réduction.\n";
+        }
 
-    int busy_poll = 50;
-    setsockopt(sock, SOL_SOCKET, SO_BUSY_POLL, &busy_poll, sizeof(busy_poll));
+        if (texture) SDL_DestroyTexture(texture);
+        texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_NV12,
+                                    SDL_TEXTUREACCESS_STREAMING, w, h);
+        texW = w;
+        texH = h;
+    };
 
-    struct timeval tv = {1, 0};
-    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    // --- Démarrage du thread réseau ---
+    FrameMailbox mailbox;
+    Stats stats;
+    std::atomic<bool> running{true};
+    std::thread net(networkThread, std::ref(mailbox), std::ref(stats),
+                    std::ref(running));
 
-    struct sockaddr_in addr = {0};
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = INADDR_ANY;
-    addr.sin_port = htons(PORT);
-    bind(sock, (struct sockaddr*)&addr, sizeof(addr));
-
-    std::vector<uint8_t> frameBuffer(15 * 1024 * 1024);
-
-    struct mmsghdr msgs[VLEN];
-    struct iovec iovecs[VLEN];
-    uint8_t packetBuffers[VLEN][MAX_UDP_PAYLOAD + sizeof(UDPFrameHeader)];
-
-    for (int i = 0; i < VLEN; i++) {
-        memset(&iovecs[i], 0, sizeof(iovecs[i]));
-        memset(&msgs[i], 0, sizeof(msgs[i]));
-        iovecs[i].iov_base = packetBuffers[i];
-        iovecs[i].iov_len = sizeof(packetBuffers[i]);
-        msgs[i].msg_hdr.msg_iov = &iovecs[i];
-        msgs[i].msg_hdr.msg_iovlen = 1;
-    }
-
-    uint32_t currentFrameId = 0;
-    int chunksReceived = 0;
-    int expectedChunks = 0;
-    int currentWidth = 0, currentHeight = 0;
-    bool running = true;
-    SDL_Event event;
-
-    // --- VARIABLES DEBUG ---
-    auto lastLogTime = std::chrono::steady_clock::now();
-    uint32_t fpsCounter = 0;
-    uint32_t drainCounter = 0;
-    uint32_t frameLossCounter = 0;
-    uint32_t maxBytesInQueue = 0;
-    auto lastPacketTime = std::chrono::steady_clock::now();
-    bool sleepSignalSent = false;
+    pinThread(DISPLAY_CPU, 20, "display");
     SDL_ShowCursor(SDL_DISABLE);
-    DEBUG_COUT << "🚀 Receiver MTU 65k (DEBUG) Ready.\n";
+    DEBUG_COUT << "🚀 Receiver multithread prêt.\n";
+
+    auto lastLog = std::chrono::steady_clock::now();
+    uint32_t displayedFps = 0;
 
     while (running) {
-        while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_QUIT || (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE)) running = false;
+        SDL_Event e;
+        while (SDL_PollEvent(&e)) {
+            if (e.type == SDL_QUIT ||
+                (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE))
+                running = false;
         }
 
-        // --- DRAIN LOGIC (Seuil Haut 28MB) ---
-        int bytesAvailable;
-        if (ioctl(sock, FIONREAD, &bytesAvailable) == 0) {
-            if (bytesAvailable > (int)maxBytesInQueue) maxBytesInQueue = bytesAvailable; // Stats
+        if (mailbox.tryAcquire()) {
+            FrameMailbox::Slot& slot = mailbox.readSlot();
 
-            // Seuil à 28 Mo pour tolérer les bursts de 2 frames
-            if (bytesAvailable > 28 * 1024 * 1024) {
-                // LOG LORS D'UN DRAIN
-                DEBUG_COUT << "⚠️ [DRAIN] Buffer: " << (bytesAvailable/1024/1024) << "MB. Purge !\n";
-                drainCounter++;
-                while (bytesAvailable > 0) {
-                    if (recvmmsg(sock, msgs, VLEN, 0, NULL) <= 0) break;
-                    ioctl(sock, FIONREAD, &bytesAvailable);
-                }
-                currentFrameId = 0; chunksReceived = 0; continue;
-            }
-        }
+            if (slot.w != texW || slot.h != texH)
+                applyStreamResolution(slot.w, slot.h);
 
-        // --- BATCH READ ---
-        int numMsgs = recvmmsg(sock, msgs, VLEN, 0, NULL);
-        if (numMsgs > 0) {
-                    // On a reçu des paquets : on met à jour l'horloge et on réinitialise l'état
-                    lastPacketTime = std::chrono::steady_clock::now();
-                    if (sleepSignalSent) {
-                        DEBUG_COUT << "⚡️ Réception reprise. Réinitialisation du signal de veille.\n";
-                        sleepSignalSent = false;
-                    }
+            if (texture) {
+                SDL_UpdateTexture(texture, nullptr, slot.data.data(), texW);
+                SDL_RenderClear(renderer);
+                if (texW <= panelW && texH <= panelH) {
+                    SDL_Rect dst = {(panelW - texW) / 2, (panelH - texH) / 2,
+                                    texW, texH};
+                    SDL_RenderCopy(renderer, texture, nullptr, &dst);
                 } else {
-                    // Aucun paquet reçu. Vérifions depuis combien de temps :
-                    auto now = std::chrono::steady_clock::now();
-                    auto durationWithoutPackets = std::chrono::duration_cast<std::chrono::seconds>(now - lastPacketTime).count();
-
-                    if (durationWithoutPackets >= 5 && !sleepSignalSent) {
-                        // 3 secondes atteintes : Envoi de l'alerte UDP
-                        int alertSock = socket(AF_INET, SOCK_DGRAM, 0);
-                        if (alertSock >= 0) {
-                            struct sockaddr_in destAddr = {0};
-                            destAddr.sin_family = AF_INET;
-                            destAddr.sin_port = htons(5002);
-                            inet_pton(AF_INET, "127.0.0.1", &destAddr.sin_addr);
-
-                            const char* alertMsg = "SLP_DETECTED";
-                            sendto(alertSock, alertMsg, strlen(alertMsg), 0, (struct sockaddr*)&destAddr, sizeof(destAddr));
-                            close(alertSock);
-
-                            DEBUG_COUT << "💤 TIMEOUT: 3s sans paquet. Signal 'SLP_DETECTED' envoyé sur 127.0.0.1:5002\n";
-                            sleepSignalSent = true; // On verrouille pour ne pas spammer
-                        }
-                    }
-                    continue; // Passe à l'itération suivante de la boucle principale
+                    SDL_RenderCopy(renderer, texture, nullptr, nullptr);
                 }
-        for (int i = 0; i < numMsgs; i++) {
-            UDPFrameHeader* header = (UDPFrameHeader*)packetBuffers[i];
-            uint8_t* payload = packetBuffers[i] + sizeof(UDPFrameHeader);
-            int len = msgs[i].msg_len;
-
-            if (header->frameId > currentFrameId || (currentFrameId - header->frameId) > 500) {
-                // Détection perte
-                if (currentFrameId != 0 && (header->frameId > currentFrameId + 1)) {
-                    frameLossCounter += (header->frameId - currentFrameId - 1);
-                    DEBUG_COUT << "❌ SAUT D'IMAGE : Perdu " << (header->frameId - currentFrameId - 1) << " frames.\n";
-                }
-
-                currentFrameId = header->frameId;
-                chunksReceived = 0;
-                expectedChunks = header->totalChunks;
-
-                if (header->width != currentWidth || header->height != currentHeight) {
-                    currentWidth = header->width; currentHeight = header->height;
-                    if (header->totalSize > frameBuffer.size()) frameBuffer.resize(header->totalSize);
-
-                    // Suivi automatique : si le flux change de définition et qu'un
-                    // mode KMS EXACT existe, on recale la dalle dessus (modeset).
-                    // Comme ça il suffit de changer la résolution côté Mac
-                    // (BetterDisplay) et le receiver suit, toujours en 1:1.
-                    if (followStream && (currentWidth != panelW || currentHeight != panelH)) {
-                        SDL_DisplayMode want; SDL_zero(want);
-                        want.w = currentWidth; want.h = currentHeight;
-                        SDL_DisplayMode got;
-                        if (SDL_GetClosestDisplayMode(0, &want, &got) &&
-                            got.w == currentWidth && got.h == currentHeight) {
-                            SDL_SetWindowFullscreen(window, 0);
-                            SDL_SetWindowSize(window, got.w, got.h);
-                            SDL_SetWindowDisplayMode(window, &got);
-                            SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN);
-                            DEBUG_COUT << "🔄 Tentative de recalage dalle -> " << got.w
-                                       << "x" << got.h << " @ " << got.refresh_rate << "Hz\n";
-                        }
-                        // Vérité terrain : on relit la taille réelle de la cible
-                        // de rendu (le modeset peut ne pas avoir abouti sous kmsdrm).
-                        int ow = panelW, oh = panelH;
-                        SDL_GetRendererOutputSize(renderer, &ow, &oh);
-                        if (ow > 0 && oh > 0) { panelW = ow; panelH = oh; }
-                        SDL_RenderSetLogicalSize(renderer, panelW, panelH);
-                    }
-
-                    if (texture) SDL_DestroyTexture(texture);
-                    // Échantillonnage : "0" (nearest) quand le flux arrive déjà à
-                    // la résolution native -> copie 1:1, zéro flou. "1" (linear)
-                    // seulement dans le cas dégradé où le flux n'est pas à la
-                    // bonne taille et doit être redimensionné.
-                    const bool nativeMatch = (currentWidth == panelW && currentHeight == panelH);
-                    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, nativeMatch ? "0" : "1");
-                    if (nativeMatch) {
-                        DEBUG_COUT << "✅ Flux " << currentWidth << "x" << currentHeight
-                                   << " == dalle : rendu 1:1 plein écran.\n";
-                    } else if (currentWidth <= panelW && currentHeight <= panelH) {
-                        DEBUG_COUT << "ℹ️ Flux " << currentWidth << "x" << currentHeight
-                                   << " < dalle " << panelW << "x" << panelH
-                                   << " : rendu 1:1 centré (bandes noires), image nette.\n";
-                    } else {
-                        DEBUG_COUT << "⚠️ Flux " << currentWidth << "x" << currentHeight
-                                   << " > dalle " << panelW << "x" << panelH
-                                   << " : réduction d'échelle (perte de netteté).\n";
-                    }
-                    texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_NV12, SDL_TEXTUREACCESS_STREAMING, currentWidth, currentHeight);
-                }
+                SDL_RenderPresent(renderer); // <-- bloque sur le vblank
+                displayedFps++;
             }
-
-            if (header->frameId == currentFrameId) {
-                size_t offset = header->chunkId * MAX_UDP_PAYLOAD;
-                if (offset + (len - sizeof(UDPFrameHeader)) <= frameBuffer.size()) {
-                    memcpy(frameBuffer.data() + offset, payload, len - sizeof(UDPFrameHeader));
-                    chunksReceived++;
-                }
-
-                if (chunksReceived >= expectedChunks && texture) {
-                    SDL_UpdateTexture(texture, NULL, frameBuffer.data(), currentWidth);
-                    SDL_RenderClear(renderer);
-                    // Blit 1:1 : jamais d'étirement bilinéaire. Si le flux est
-                    // plus petit que la dalle (modeset non appliqué), on le
-                    // centre avec des bandes noires plutôt que de le rendre flou.
-                    if (currentWidth <= panelW && currentHeight <= panelH) {
-                        SDL_Rect dst;
-                        dst.w = currentWidth; dst.h = currentHeight;
-                        dst.x = (panelW - currentWidth) / 2;
-                        dst.y = (panelH - currentHeight) / 2;
-                        SDL_RenderCopy(renderer, texture, NULL, &dst);
-                    } else {
-                        SDL_RenderCopy(renderer, texture, NULL, NULL);
-                    }
-                    SDL_RenderPresent(renderer);
-
-                    fpsCounter++; // Compte la frame affichée
-                }
-            }
+        } else {
+            SDL_Delay(1); // pas de frame neuve : on rend la main brièvement
         }
 
-        // --- LOG SECONDE PAR SECONDE ---
         auto now = std::chrono::steady_clock::now();
-        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastLogTime).count() >= 1000) {
-            DEBUG_COUT << "[RX] FPS: " << fpsCounter
-                      << " | Drain Events: " << drainCounter
-                      << " | Frame Loss: " << frameLossCounter
-                      << " | Max Buffer: " << (maxBytesInQueue / 1024.0 / 1024.0) << " MB"
-                      << std::endl;
-
-            fpsCounter = 0;
-            drainCounter = 0;
-            frameLossCounter = 0;
-            maxBytesInQueue = 0;
-            lastLogTime = now;
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastLog)
+                .count() >= 1000) {
+            DEBUG_COUT << "[RX] Affichées: " << displayedFps
+                       << " | Produites: " << stats.producedFrames.exchange(0)
+                       << " | Drain: " << stats.drainEvents.exchange(0)
+                       << " | Pertes: " << stats.lostFrames.exchange(0)
+                       << " | Buffer max: "
+                       << (stats.maxQueueBytes.exchange(0) / 1048576.0) << " MB\n";
+            displayedFps = 0;
+            lastLog = now;
         }
     }
+
+    running = false;
+    if (net.joinable()) net.join();
 
     if (texture) SDL_DestroyTexture(texture);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
-    close(sock);
     return 0;
 }

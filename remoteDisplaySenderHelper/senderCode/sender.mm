@@ -370,7 +370,12 @@ int main(int argc, char **argv) {
     config.preservesAspectRatio = YES;
 
     config.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange;
-    config.colorSpaceName = kCGColorSpaceDCIP3;
+    // Display P3 = primaires P3 + blanc D65 + transfert sRGB. NE PAS utiliser
+    // kCGColorSpaceDCIP3 (blanc DCI verdâtre + gamma 2.6 -> teinte verte, tons
+    // sombres). Display P3 et Rec.709 partagent la matrice YCbCr (coeffs 709),
+    // donc le receiver décode en BT.709 dans les deux cas ; passer à
+    // kCGColorSpaceITUR_709 ici suffit pour repasser en gamut standard.
+    config.colorSpaceName = kCGColorSpaceDisplayP3;
 
     config.minimumFrameInterval = CMTimeMake(1, 120);
     config.queueDepth = 5;
