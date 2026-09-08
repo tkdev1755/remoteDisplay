@@ -1,0 +1,12 @@
+name: rd_helper
+description: >
+  Helper headless du récepteur remoteDisplay pour la configuration KMS/DRM
+  (aucun serveur X/Wayland). Supervise le process C++ receiver, écoute les
+  commandes UDP du Mac (veille / réveil / luminosité) et pilote l'écran.
+publish_to: 'none'
+version: 1.0.0
+
+environment:
+  sdk: ^3.5.0
+
+# Aucune dépendance : uniquement dart:io / dart:async / dart:convert.
