@@ -44,14 +44,20 @@ Network-wise, here is the overall architecture
 - A Thunderbolt 3/4/5 Cable (20Gbps bandwith at minimum)
 
 # Installation
-## On the iMac 
-- Make sure you have a clena install of debian minimal on your iMac
+
+> ⚠️ **Work in progress.** There is no one-shot installer or packaged release
+> yet — the steps below are the target flow, not something you can run today.
+> Until then, follow `receiver_code/README.md` and `receiver_helper/README.md`
+> to build and wire things up by hand.
+
+## On the iMac
+- Make sure you have a clean install of Debian/Pop!_OS minimal on your iMac
 - Type the following command
-``` 
+```
 curl -O ...
 ```
-- When the install finishes, reboot your iMac, the interfaces should be all correctly initialized 
-- The helper software should start automatically
+- When the install finishes, reboot your iMac, the interfaces should be all correctly initialized
+- The receiver helper should start automatically (as a systemd service, no desktop environment required)
 ## On the Mac ()
 - Make sure your macOS version is superior to macOS 12.3
 - Make sure the Thunderbolt Bridge interface exists in System Settings > Network Tab
@@ -62,3 +68,24 @@ curl -O ...
 
 
 # Development Setup
+
+The project is split into independently buildable pieces:
+
+- [`remoteDisplaySenderHelper/`](remoteDisplaySenderHelper) — the macOS side:
+  Xcode project for the menubar helper (Swift) and the capture/streaming
+  program (`sender.mm`, ScreenCaptureKit + UDP).
+- [`receiver_code/`](receiver_code) — the Linux side: `receiver_app`, the SDL2
+  / KMS-DRM display program (two threads — network and display — see its
+  README to build). No Flutter/GTK dependency; build it on its own.
+- [`receiver_helper/`](receiver_helper) — `rd_helper`, the headless Dart CLI
+  that supervises `receiver_app` (start/stop/restart, sleep/wake, brightness)
+  over UDP commands from the Mac. This is the **only** supported receiver-side
+  helper — it targets a bare KMS/DRM console, no X/Wayland/desktop environment
+  needed on the iMac.
+- `TUNING.md` (gitignored, kept locally) documents every tunable parameter in
+  the pipeline — buffer sizes, fps, thread priorities — and the effect of
+  changing each one.
+
+Both `receiver_code` and `receiver_helper` are meant to be **built on a dev
+machine and deployed as prebuilt binaries** — the target iMac doesn't need a
+C++ toolchain or the Dart SDK installed.

@@ -71,9 +71,7 @@ String _resolveReceiver(String? cli) {
   for (final name in const ['receiver_app', 'receiver']) {
     candidates
       ..add('$selfDir/$name')
-      ..add('$selfDir/data/bin/$name')
       ..add('/opt/remotedisplay/$name')
-      ..add('/opt/receiver_helper/data/bin/$name')
       ..add('/usr/local/bin/$name');
   }
 

@@ -102,3 +102,9 @@ app.*.map.json
 /android/app/release
 /remoteDisplaySenderHelper/remoteDisplaySenderHelper.xcodeproj/xcuserdata/
 /remoteDisplaySenderHelper/remoteDisplaySenderHelper.xcodeproj/project.xcworkspace/xcuserdata/
+TUNING.md
+
+# Builds locaux (receiver_code CMake, binaires ad-hoc)
+receiver_code/build/
+/receiver_app
+/receiver
