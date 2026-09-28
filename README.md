@@ -1,11 +1,19 @@
 # remoteDisplay
-This is a tool to fully transform your Intel iMac as a display, entirely via software and with no hardware modifications.
+
+A tool that turns an Intel iMac into an external display for another Mac, entirely in software, with no hardware modification — by streaming uncompressed 4K frames over the Thunderbolt link.
 
 ## Motivation
-The primary motivation for this project was to re-use olds iMac by repurposing their 4K retina dispalys without the need for hardware modifications. Traditionally, transforming them as a displays needed to disassemble them and using a specialized display board. remoteDisplay removes this constraint by using the bandwith of the Thunderbolt 3 link present on these machines.
 
-## What's the difference between Sunshine, VNC or other tools ?
-Sunshine or VNC rely on compression to avoid frame drops and bad performance. This generally add latency and makes it not usable even on a high bandwith link. remoteDisplay aims to supress that overhead by sending uncompressed frames on the Thunderbolt link. Furthermore, remoteDisplay is designed to replicate a display experience, by running a helper program, which is designed to detect when you connect the iMac through Thunderbolt, and turns off or turns on the iMac's Display based on the mac status.
+Pre-Retina hardware mods aside, there's no supported way to reuse an Intel iMac's 4K panel as a plain external display once the machine itself is retired — Apple's old Target Display Mode was dropped starting with the Retina iMacs, and reusing the panel otherwise means desoldering it onto a dedicated display board. remoteDisplay avoids that by using the Thunderbolt 3 link the iMac already has as a plain high-bandwidth network link, instead of any video-specific protocol.
+
+## Why not Sunshine, VNC, or another remote-desktop tool?
+
+Sunshine, VNC and similar tools compress frames to stay usable on a normal network link, which adds latency — noticeable enough that it doesn't feel like a real display anymore, even over a fast connection. remoteDisplay skips compression entirely and sends raw NV12 frames over the Thunderbolt link, which has the bandwidth to spare. It also drives the display *experience*, not just the video: a helper app watches the Thunderbolt connection and turns the iMac's panel on or off to follow the source Mac's state, the way a real external display would.
+
+### Alternatives considered
+
+- **NDI**: evaluated as the transport layer early on. Dropped — throughput and latency were far worse than a purpose-built raw UDP protocol for this use case (single point-to-point link, fixed high-bandwidth medium, no need for NDI's discovery or multi-receiver features).
+- **LZ4 frame compression**: implemented and benchmarked, then reverted. The CPU cost of compressing/decompressing every frame outweighed the bandwidth it saved, and hurt latency more than it helped, given how much headroom Thunderbolt already provides.
 
 
 ## Architecture and Tech stack
@@ -33,17 +41,18 @@ Network-wise, here is the overall architecture
 - The MTU is also changed to its maximum size so the packets are not cut into multiple pieces
 
 
-# Pre-requisites 
-- An iMac (Display receiver)
-  - Running Debian Minimal (Clean install without a desktop environment)
-  - Equipped with a Thunderbolt 3 port (iMacs with a Thunderbolt 2 port have not been tested)
-- A Mac (Emitter)
-  - Running MacOS 12.3 or newer
-  - Having BetterDisplay installed and configured with a Virtual Screen
-  - Equipped with a Thunderbolt 3 port (Again, models with a thunderbolt 2 port weren't tested)
-- A Thunderbolt 3/4/5 Cable (20Gbps bandwith at minimum)
+## Pre-requisites
 
-# Installation
+- An iMac (display receiver)
+  - Running Debian minimal (clean install, no desktop environment)
+  - Equipped with a Thunderbolt 3 port (Thunderbolt 2 iMacs are untested)
+- A Mac (emitter)
+  - Running macOS 12.3 or newer
+  - [BetterDisplay](https://github.com/waydabber/BetterDisplay) installed and configured with a virtual screen
+  - Equipped with a Thunderbolt 3 port (again, Thunderbolt 2 is untested)
+- A Thunderbolt 3/4/5 cable (20 Gbps bandwidth at minimum)
+
+## Installation
 
 > ⚠️ **Work in progress.** There is no one-shot installer or packaged release
 > yet — the steps below are the target flow, not something you can run today.
@@ -58,14 +67,14 @@ curl -O ...
 ```
 - When the install finishes, reboot your iMac, the interfaces should be all correctly initialized
 - The receiver helper should start automatically (as a systemd service, no desktop environment required)
-## On the Mac ()
-- Make sure your macOS version is superior to macOS 12.3
+
+## On the Mac
+- Make sure your macOS version is 12.3 or newer
 - Make sure the Thunderbolt Bridge interface exists in System Settings > Network Tab
 - Download the .pkg installer from the Releases page
 - Launch the .pkg installer and follow the steps
 - Once installed, launch the app then type in the ID of the virtual display created by BetterDisplay
-- You should be now able to stream the display !
-
+- You should now be able to stream the display!
 
 # Development Setup
 
@@ -89,3 +98,7 @@ The project is split into independently buildable pieces:
 Both `receiver_code` and `receiver_helper` are meant to be **built on a dev
 machine and deployed as prebuilt binaries** — the target iMac doesn't need a
 C++ toolchain or the Dart SDK installed.
+
+# License
+
+MIT — see [LICENSE](LICENSE).
