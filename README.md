@@ -91,13 +91,6 @@ The project is split into independently buildable pieces:
   over UDP commands from the Mac. This is the **only** supported receiver-side
   helper — it targets a bare KMS/DRM console, no X/Wayland/desktop environment
   needed on the iMac.
-- `TUNING.md` (gitignored, kept locally) documents every tunable parameter in
-  the pipeline — buffer sizes, fps, thread priorities — and the effect of
-  changing each one.
-
-Both `receiver_code` and `receiver_helper` are meant to be **built on a dev
-machine and deployed as prebuilt binaries** — the target iMac doesn't need a
-C++ toolchain or the Dart SDK installed.
 
 # License
 
