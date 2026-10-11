@@ -66,7 +66,7 @@ A 4096 × 2304 NV12 frame is about 13.5 MiB. It is cut into chunks of 65,000 byt
 
 The first version displayed nothing, or one frame every four seconds. The cause was the MTU: at the default 1,500 bytes, each 65 KB datagram was fragmented into ~44 IP fragments, and losing any one of them discarded the whole datagram. Raising the Thunderbolt interface to a jumbo MTU (65,520) makes one datagram travel as a single packet on the wire.
 
-### 3. Better late than never... Actually no !
+### 3. Better late than never... Actually, no !
 
 There is no retransmission, no FEC, no acknowledgement. For a display, a frame that arrives late is worse than no frame at all. The receiver only shows a frame once every chunk has arrived; when a chunk from a newer frame shows up, the incomplete one is abandoned. If the socket buffer ever backs up past ~2 frames (28 MiB), it is drained entirely and the receiver resumes on a fresh frame rather than displaying the past.
 
@@ -93,7 +93,7 @@ The receiver machine runs a minimal Linux install with no desktop environment. T
 
 ## Measuring latency
 
-**Method:** a stopwatch runs on the Mac and is mirrored on the iMac. Both screens are filmed side by side in slow motion (240 frame per second), and each frame of the video gives one reading: the difference between the two stopwatches is the delay the iMac adds compared with the Mac's own display. Sorrowfully this method has its limits, but it gives a rough idea of the experienced latency
+**Method:** a stopwatch runs on the Mac and is mirrored on the iMac. Both screens are filmed side by side in slow motion (240 frames per second), and each frame of the video gives one reading: the difference between the two stopwatches is the delay the iMac adds compared with the Mac's own display. This method isn't the best in terms of accuracy, but it gives a rough idea of the experienced latency
 
 | | Readings | Result |
 |---|---|---|
@@ -125,7 +125,7 @@ With `--debug`, the receiver prints a per-second breakdown of where the time goe
 - 🚧 No one-command installer yet — setup is manual (see below).
 - 🚧 Tested only with Thunderbolt 3, on a 2017 21.5" iMac.
 - 🚧 Requires BetterDisplay on the Mac to create the virtual display.
-- 🔬 Exploring an RDMA transport to reach the bandwidth a 5K panel needs and minimize memory copies (~10.6 Gbit/s at 60 fps).
+- 🔬 Exploring an RDMA transport to reach the bandwidth a 5K panel needs (~10.6 Gbit/s at 60 fps) and reduce memory copies.
 
 ## Requirements
 

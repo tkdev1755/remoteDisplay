@@ -1,70 +1,70 @@
-# receiver_helper — helper headless du récepteur
+# receiver_helper — headless receiver daemon
 
-Supervise [`receiver_app`](../receiver_code) (démarrage, arrêt, redémarrage auto)
-et pilote l'écran de la machine réceptrice : c'est le seul helper supporté,
-pensé dès le départ pour **KMS/DRM sans serveur X/Wayland** (pas de dépendance
-GTK/Flutter — CLI Dart, compile en binaire natif unique).
+Supervises [`receiver_app`](../receiver_code) (start, stop, automatic restart)
+and drives the receiving machine's panel. It is the only supported helper,
+designed from the start for **KMS/DRM without an X/Wayland server** (no
+GTK/Flutter dependency — a Dart CLI compiled to a single native binary).
 
-## Ce qu'il fait
+## What it does
 
-| Fonction | Implémentation |
+| Feature | Implementation |
 |---|---|
-| Lance / arrête / suspend / reprend le process `receiver_app` | ✅ + redémarrage auto si crash |
-| Écoute UDP `:5002` : `SLP_DETECTED`, `CONN_OK`, `BRIGHTNESS:<n>` | ✅ |
-| Extinction écran | arrêt du receiver + `echo 4 > fbN/blank` (DPMS off réel) |
-| Rallumage écran | `echo 0 > fbN/blank` + relance du receiver + luminosité réappliquée |
-| Luminosité | `brightnessctl`, repli `/sys/class/backlight` |
-| Overlay visuel (statut / barre luminosité) | ❌ *(pas fait — nécessiterait un rendu dans le receiver SDL)* |
+| Starts / stops / suspends / resumes the `receiver_app` process | ✅ + automatic restart on crash |
+| Listens on UDP `:5002`: `SLP_DETECTED`, `CONN_OK`, `BRIGHTNESS:<n>` | ✅ |
+| Panel off | stops the receiver + `echo 4 > fbN/blank` (real DPMS off) |
+| Panel on | `echo 0 > fbN/blank` + restarts the receiver + reapplies brightness |
+| Brightness | `brightnessctl`, falling back to `/sys/class/backlight` |
+| Visual overlay (status / brightness bar) | ❌ *(not done — would require rendering inside the SDL receiver)* |
 
 ## Build
 
-Ce dossier (helper) : SDK Dart requis pour compiler, mais **pas** sur la
-machine cible — on compile sur un poste de dev et on ne déploie que le
-binaire produit (voir « Installation » plus bas).
+This folder (the helper) needs the Dart SDK to compile, but **not** on the
+target machine: compile on a development machine and deploy only the
+resulting binary (see "Installing as a service" below).
 
 ```bash
-./build.sh          # -> ./rd_helper (binaire natif autonome)
+./build.sh          # -> ./rd_helper (standalone native binary)
 ```
 
-[`../receiver_code`](../receiver_code) (le programme d'affichage lui-même) se
-build séparément, en C++ — voir son propre README.
+[`../receiver_code`](../receiver_code) (the display program itself) is built
+separately, in C++ — see its own README.
 
-## Utilisation
+## Usage
 
 ```bash
-sudo SDL_VIDEODRIVER=kmsdrm ./rd_helper --receiver /chemin/vers/receiver_app
+sudo SDL_VIDEODRIVER=kmsdrm ./rd_helper --receiver /path/to/receiver_app
 ```
 
-Options : `--receiver <path>`, `--port <n>` (déf. 5002), `--no-debug`,
-`-- <args>` transmis tels quels au receiver (ex. `-- --width 3840 --height 2160`).
+Options: `--receiver <path>`, `--port <n>` (default 5002), `--no-debug`,
+`-- <args>` passed as-is to the receiver (e.g. `-- --width 3840 --height 2160`).
 
-Résolution auto du binaire receiver si `--receiver` absent : `$RD_RECEIVER_BIN`,
-puis à côté de `rd_helper`, puis `/opt/remotedisplay/`, `/usr/local/bin/`.
+If `--receiver` is omitted, the receiver binary is looked up in this order:
+`$RD_RECEIVER_BIN`, next to `rd_helper`, then `/opt/remotedisplay/`, `/usr/local/bin/`.
 
-## Installation en service (appliance)
+## Installing as a service (appliance)
 
 ```bash
 sudo install -Dm755 rd_helper                     /opt/remotedisplay/rd_helper
 sudo install -Dm755 ../receiver_code/build/receiver_app /opt/remotedisplay/receiver_app
 sudo setcap 'cap_sys_nice=eip'          /opt/remotedisplay/receiver_app
 sudo install -Dm644 systemd/rd-helper.service /etc/systemd/system/rd-helper.service
-# éditer les chemins dans le .service si besoin
-sudo systemctl disable --now gdm        # libère la console / le DRM master
+# edit the paths in the .service file if needed
+sudo systemctl disable --now gdm        # frees the console / DRM master
 sudo systemctl daemon-reload
 sudo systemctl enable --now rd-helper
 ```
 
-Logs : `journalctl -u rd-helper -f` (inclut la sortie `[recv]` du process C++).
+Logs: `journalctl -u rd-helper -f` (includes the `[recv]` output of the C++ process).
 
-## Notes / limites connues
+## Notes / known limitations
 
-- **Extinction = vrai DPMS off** via `drm_fb_helper` : `bl_power` est ignoré par
-  `amdgpu` sur cet iMac et la dalle a un plancher de rétroéclairage, donc
-  `brightness 0` n'éteint pas. Seul `echo 4 > /sys/class/graphics/fbN/blank`
-  (une fois `amdgpudrmfb` maître, receiver arrêté) coupe réellement panneau +
-  rétroéclairage. Conséquence : le réveil refait un modeset (~1-2 s), comme
-  n'importe quel moniteur qui sort de veille.
-- `/sys/class/drm/*/dpms` est en lecture seule sur ce noyau — pas utilisable.
-- `rd_helper` doit tourner en **root** : le receiver enfant a besoin d'être
-  DRM master sans session logind, et l'écriture `fbX/blank` / `backlight`
-  demande les privilèges.
+- **Panel off = real DPMS off** through `drm_fb_helper`: `bl_power` is ignored by
+  `amdgpu` on this iMac and the panel has a minimum backlight level, so
+  `brightness 0` does not turn it off. Only `echo 4 > /sys/class/graphics/fbN/blank`
+  (once `amdgpudrmfb` is master and the receiver is stopped) truly cuts the panel
+  and its backlight. As a result, waking up performs a mode-set (~1–2 s), like
+  any monitor coming out of standby.
+- `/sys/class/drm/*/dpms` is read-only on this kernel — not usable.
+- `rd_helper` must run as **root**: the child receiver needs to be DRM master
+  without a logind session, and writing to `fbX/blank` / `backlight` requires
+  privileges.

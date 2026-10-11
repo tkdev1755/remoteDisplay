@@ -1,20 +1,20 @@
 [Unit]
-Description=remoteDisplay — helper headless du récepteur (KMS/DRM)
+Description=remoteDisplay — headless receiver daemon (KMS/DRM)
 After=network-online.target systemd-user-sessions.service
 Wants=network-online.target
-# On veut la console libre : pas de display manager.
+# The console must be free: no display manager.
 Conflicts=gdm.service getty@tty1.service
 
 [Service]
 Type=simple
-# Adapter les chemins à l'installation réelle :
+# Adjust the paths to the actual installation:
 ExecStart=/opt/remotedisplay/rd_helper --receiver /opt/remotedisplay/receiver_app
 Environment=SDL_VIDEODRIVER=kmsdrm
 
-# Le receiver (enfant) doit être DRM master : sans session logind, il faut root.
+# The (child) receiver must be DRM master: without a logind session, this requires root.
 User=root
 
-# Donne au receiver une console à lui pour le KMS (évite les warnings "no VT").
+# Gives the receiver its own console for KMS (avoids "no VT" warnings).
 StandardInput=tty
 TTYPath=/dev/tty1
 TTYReset=yes
