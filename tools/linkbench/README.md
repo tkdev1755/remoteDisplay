@@ -13,15 +13,14 @@ shaped like remoteDisplay's.
    rate where packets start getting lost.
 3. **remoteDisplay-like traffic** (`framebench`): whole frames cut into UDP
    chunks and sent in one burst per frame, like the real sender. For each frame
-   size (4K and 5K, NV12 and BC7) and pacing (60 fps, or back-to-back to find the
-   ceiling), it reports:
+   size (4K and 5K, NV12 and BC7) and frame rate (60, 90 and 120 fps), it reports:
    - **delivered %**: frames that arrived complete;
    - **latency**: from the start of a frame's burst until the receiver's
      acknowledgement comes back (sender clock only, no clock sync needed);
    - **burst**: first chunk → last chunk, on the receiver's clock;
    - **goodput**: useful bits of complete frames per second.
 
-   It also checks how the datagram size (1,400 to 65,000 bytes) affects today's frames.
+   It also checks how the datagram size (4,000 to 48,000 bytes) affects today's frames.
 
 ## Running it
 
@@ -60,7 +59,7 @@ Afterwards, restart remoteDisplay on the iMac: `sudo systemctl start rd-helper`.
   uncompressed 5K would.
 - **framebench at 60 fps** is the realistic case: delivered % should be
   100, and the burst time is the part of the display latency spent on the wire.
-- **framebench back-to-back** gives the maximum frame rate for each format.
+- **framebench at 90 and 120 fps** shows the headroom left for each format.
 - **The chunk-size runs** show whether large datagrams still matter on this
   link (they did with the default 1,500-byte MTU).
 - A single run is a snapshot: run the suite two or three times before drawing

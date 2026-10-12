@@ -52,13 +52,16 @@ BC7_4K=$((4096 * 2304))            # 1 byte per pixel
 BC7_5K=$((5120 * 2880))
 NV12_5K=$((5120 * 2880 * 3 / 2))
 
+# Frame rates: 60 is the target; 90 and 120 show the headroom. (Sending
+# back-to-back with no pacing only floods the receiver, so it is not tested.)
 for f in "4k_nv12 $NV12_4K" "4k_bc7 $BC7_4K" "5k_bc7 $BC7_5K" "5k_nv12 $NV12_5K"; do
     set -- $f
-    bench "${1}_60fps" "$2" 60 65000
-    bench "${1}_max" "$2" 0 65000
+    for fps in 60 90 120; do
+        bench "${1}_${fps}fps" "$2" "$fps" 65000
+    done
 done
 # Effect of the datagram size on today's frames.
-for c in 1400 8000 32000; do
+for c in 4000 8000 12000 16000 24000 32000 48000; do
     bench "4k_nv12_60fps_chunk$c" "$NV12_4K" 60 "$c"
 done
 
@@ -77,10 +80,10 @@ for path in sorted(glob.glob(os.path.join(out, "iperf_*.json"))):
     if "error" in d:
         rows.append({"test": name, "error": d["error"]}); continue
     end = d["end"]
-    if "sum_received" in end:   # TCP
+    if d["start"]["test_start"]["protocol"] == "TCP":
         rows.append({"test": name, "gbps": round(end["sum_received"]["bits_per_second"] / 1e9, 2)})
-    else:                       # UDP
-        s = end["sum"]
+    else:  # UDP: report what the receiver actually got
+        s = end.get("sum_received", end["sum"])
         rows.append({"test": name, "gbps": round(s["bits_per_second"] / 1e9, 2),
                      "lost_pct": round(s.get("lost_percent", 0), 3),
                      "jitter_ms": round(s.get("jitter_ms", 0), 3)})
