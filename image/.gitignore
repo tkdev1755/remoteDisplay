@@ -3,3 +3,8 @@ payload/
 mkosi.output/
 mkosi.cache/
 mkosi.profiles/dev/mkosi.extra/root/.ssh/authorized_keys
+
+# The repo-wide "*.d" rule (C dependency files) also hides the *.d config directories
+# (journald.conf.d, sysctl.d, nftables.d, ...) that the image needs.
+!*.d
+!*.d/
