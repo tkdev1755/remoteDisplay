@@ -1,0 +1,86 @@
+name: image
+
+# Builds the receiver image (dev profile) from scratch on a native amd64 runner, then boots it in
+# QEMU once per simulated iMac model (scripts/ci-smoke.sh). The dev profile is built because the
+# smoke test reads rd-doctor on the serial console; it is a test artifact and must never be shipped.
+# Hardware checks (panel, fluidity, latency) stay manual on a real iMac.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "image/**"
+      - "receiver_code/**"
+      - "receiver_helper/**"
+      - ".github/workflows/image.yml"
+  pull_request:
+    paths:
+      - "image/**"
+      - "receiver_code/**"
+      - "receiver_helper/**"
+      - ".github/workflows/image.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # build.sh derives VERSION and SOURCE_DATE_EPOCH from git
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: "3.12.2"    # rd_helper is compiled on the host, as on the dev machine
+
+      - name: Enable KVM for QEMU
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm || echo "no /dev/kvm: QEMU will use emulation (slower)"
+
+      - name: Throwaway SSH key for the dev profile
+        run: ssh-keygen -q -t ed25519 -N "" -f "$RUNNER_TEMP/ci_key"
+
+      - name: Build the image (dev profile)
+        env:
+          PROFILE: dev
+          DEV_SSH_KEY: ${{ runner.temp }}/ci_key.pub
+        run: ./image/scripts/build.sh
+
+      - name: QEMU smoke tests (one boot per simulated iMac model)
+        run: |
+          img="$(ls image/out/remotedisplay-*-dev.img | head -1)"
+          ./image/scripts/ci-smoke.sh "$img"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Image"
+            for m in image/out/*.manifest.json; do
+              [ -f "$m" ] || continue
+              echo '```json'; cat "$m"; echo '```'
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the image (dev profile, test use only)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: remotedisplay-dev-image
+          path: |
+            image/out/*.img.zst
+            image/out/*.manifest.json
+          retention-days: 7
+          if-no-files-found: error
