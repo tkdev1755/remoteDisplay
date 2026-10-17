@@ -1,0 +1,5 @@
+out/
+payload/
+mkosi.output/
+mkosi.cache/
+mkosi.profiles/dev/mkosi.extra/root/.ssh/authorized_keys
