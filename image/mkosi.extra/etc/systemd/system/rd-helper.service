@@ -1,0 +1,32 @@
+[Unit]
+Description=remoteDisplay — headless receiver daemon (KMS/DRM)
+# Deliberately NOT After=network-online.target: the Thunderbolt interface only exists
+# once the Mac is plugged in, and waiting for "online" delayed the display by ~54 s
+# on the reference iMac.
+After=systemd-udevd.service systemd-user-sessions.service
+Conflicts=getty@tty1.service
+
+[Service]
+Type=simple
+# amdgpu probes after the root switch: wait for the DRM device instead of letting the
+# receiver crash and restart (it exited twice at boot before the GPU was ready).
+ExecStartPre=/usr/bin/udevadm wait --timeout=60 /dev/dri/card0
+ExecStart=/opt/remotedisplay/rd_helper --receiver /opt/remotedisplay/receiver_app
+Environment=SDL_VIDEODRIVER=kmsdrm
+
+# The receiver must be DRM master without a logind session: root, for now.
+User=root
+
+StandardInput=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+
+StandardOutput=journal
+StandardError=journal
+
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

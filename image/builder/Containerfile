@@ -1,0 +1,30 @@
+# Build environment for the remoteDisplay receiver image.
+# Same Debian release as the image itself, so the receiver is linked against the
+# glibc / SDL2 it will run with.
+#
+# Built twice by scripts/build.sh:
+#   - linux/amd64 for receiver_app (must be an x86-64 binary);
+#   - the host's native platform for mkosi + packing. mkosi cannot run under
+#     user-mode x86 emulation (it needs mount_setattr()), so on an Apple Silicon
+#     host the x86-64 root tree is assembled natively and its foreign binaries run
+#     through qemu-user.
+FROM debian:trixie
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        mkosi bubblewrap debootstrap apt dpkg-dev debian-archive-keyring ca-certificates \
+        systemd-container kmod python3 git qemu-user-static \
+        squashfs-tools dosfstools mtools fdisk zstd \
+        grub-common qemu-system-x86 ovmf \
+        cmake g++ make pkg-config libsdl2-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# grub-efi-amd64-bin only exists for amd64 hosts: fetch the x86_64-efi modules
+# explicitly so grub-mkstandalone works on any build host.
+RUN dpkg --add-architecture amd64 \
+    && apt-get update \
+    && cd /tmp && apt-get download grub-efi-amd64-bin:amd64 \
+    && dpkg -x grub-efi-amd64-bin_*.deb /opt/grub-amd64 \
+    && rm -f /tmp/*.deb && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /work/image

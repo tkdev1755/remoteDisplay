@@ -1,0 +1,44 @@
+#!/bin/sh
+# rd-doctor — health check of the remoteDisplay receiver appliance.
+# Prints facts first, then pass/fail checks; exits non-zero if any check fails.
+# Every line starts with "RD-DOCTOR" so it is easy to grep from a console log.
+
+bad=0
+say()   { echo "RD-DOCTOR $*"; }
+check() { # check <description> <command>
+    if eval "$2" >/dev/null 2>&1; then say "ok    $1"; else say "FAIL  $1"; bad=$((bad + 1)); fi
+}
+note()  { # note <description> <command>: informational, never fails
+    if eval "$2" >/dev/null 2>&1; then say "ok    $1"; else say "info  $1"; fi
+}
+
+say "--- facts"
+say "kernel:  $(uname -r)"
+say "root:    $(findmnt -n -o FSTYPE,SOURCE / 2>/dev/null)"
+say "medium:  $(findmnt -n -o FSTYPE,SOURCE /run/live/medium 2>/dev/null || echo 'not mounted')"
+say "memory:  $(free -m | awk '/^Mem:/ {print $3 " MiB used of " $2 " MiB"}')"
+ts() { dmesg | sed -n "$1" | head -1; }
+t_usb="$(ts 's/^\[ *\([0-9.]*\)\] sd [0-9:]*: \[sd.\] Attached SCSI removable disk.*/\1/p')"
+t_live="$(ts 's/^\[ *\([0-9.]*\)\] loop: module loaded.*/\1/p')"
+t_init="$(ts 's/^\[ *\([0-9.]*\)\] systemd\[1\]: systemd [0-9].*running in system mode.*/\1/p')"
+say "timeline: usb drive ${t_usb:-?} s | live-boot done ${t_live:-?} s | systemd starts ${t_init:-?} s (since kernel start)"
+say "grub:    product=$(sed -n 's/.*rd_product=\([^ ]*\).*/\1/p' /proc/cmdline) video=$(sed -n 's/.*\(video=[^ ]*\).*/\1/p' /proc/cmdline)"
+say "uptime:  $(cut -d' ' -f1 /proc/uptime) s since kernel start"
+
+say "--- checks"
+check "root filesystem is a RAM overlay"          "findmnt -n -o FSTYPE / | grep -q overlay"
+check "system image copied to RAM (toram)"        "findmnt -n -o FSTYPE /run/live/medium | grep -q tmpfs"
+check "journal is volatile (RAM only, nothing persisted)" "[ -d /run/log/journal ] && [ -z \"\$(ls -A /var/log/journal 2>/dev/null)\" ]"
+check "systemd-networkd running"                  "systemctl is-active --quiet systemd-networkd"
+check "firewall loaded (ports 5000/5002)"         "nft list ruleset | grep -q 5002"
+check "rd-helper.service active"                  "systemctl is-active --quiet rd-helper"
+check "libGL / libOpenGL present (SDL shaders)"   "ldconfig -p | grep -q 'libGL.so.1' && ldconfig -p | grep -q 'libOpenGL.so.0'"
+check "no Mesa/GL errors from the receiver"       "[ \"\$(journalctl -u rd-helper -b --no-pager 2>/dev/null | grep -c 'Mesa: error')\" -eq 0 ]"
+check "receiver uses the pinned SDL 2.30"         "ldd /opt/remotedisplay/receiver_app | grep -q '/opt/remotedisplay/lib/libSDL2'"
+check "receiver binary present"                   "[ -x /opt/remotedisplay/receiver_app ]"
+check "no failed units"                           "[ \"\$(systemctl --failed --no-legend | wc -l)\" -eq 0 ]"
+note  "Thunderbolt link present (needs the Mac plugged in)" "ip link show thunderbolt0"
+note  "GPU on a DRM device"                       "ls /dev/dri/card*"
+
+if [ "$bad" -eq 0 ]; then say "RESULT: healthy"; else say "RESULT: $bad check(s) failed"; fi
+[ "$bad" -eq 0 ]

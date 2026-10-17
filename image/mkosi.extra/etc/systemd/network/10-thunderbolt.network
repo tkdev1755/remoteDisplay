@@ -1,0 +1,12 @@
+[Match]
+Name=thunderbolt0
+
+[Link]
+# Jumbo MTU: one 65 000-byte datagram = one packet on the wire (see README, "Chonky datagrams").
+MTUBytes=65520
+
+[Network]
+Address=10.0.0.1/16
+LinkLocalAddressing=no
+IPv6AcceptRA=no
+ConfigureWithoutCarrier=no

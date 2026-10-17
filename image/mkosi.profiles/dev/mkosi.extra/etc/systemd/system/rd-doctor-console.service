@@ -1,0 +1,16 @@
+[Unit]
+Description=remoteDisplay self-check on the console (dev profile only)
+After=multi-user.target rd-helper.service
+Wants=rd-helper.service
+
+[Service]
+Type=oneshot
+# Give services a moment to settle after the target is reached.
+ExecStartPre=/bin/sleep 5
+ExecStart=/usr/local/sbin/rd-doctor
+StandardOutput=journal+console
+StandardError=journal+console
+SuccessExitStatus=0 1
+
+[Install]
+WantedBy=multi-user.target
