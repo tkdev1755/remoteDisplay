@@ -73,6 +73,22 @@ static void sleep_until(uint64_t deadline)
     }
 }
 
+/* Precise wait for pacing: sleep while far from the deadline, spin for the last
+ * stretch (a chunk at 14 Gbit/s lasts ~37 us, below nanosleep's precision). */
+static void pace_until(uint64_t deadline)
+{
+    for (;;) {
+        uint64_t t = now_ns();
+        if (t >= deadline)
+            return;
+        uint64_t left = deadline - t;
+        if (left > 300000) {
+            struct timespec ts = { 0, (long)(left - 200000) };
+            nanosleep(&ts, NULL);
+        }
+    }
+}
+
 static int cmp_u64(const void *a, const void *b)
 {
     uint64_t x = *(const uint64_t *)a, y = *(const uint64_t *)b;
@@ -201,7 +217,7 @@ static void drain_acks(int fd, uint32_t run_id, const uint64_t *t0, uint64_t *la
 }
 
 static int run_sender(const char *ip, int port, size_t frame_bytes, double fps, double seconds,
-                      size_t chunk, int sndbuf, const char *label)
+                      size_t chunk, int sndbuf, double pace_gbps, const char *label)
 {
     if (chunk + sizeof(DataHeader) > MAX_CHUNK) {
         fprintf(stderr, "chunk too large (max %zu)\n", (size_t)MAX_CHUNK - sizeof(DataHeader));
@@ -239,8 +255,12 @@ static int run_sender(const char *ip, int port, size_t frame_bytes, double fps, 
             sleep_until(next);
         uint64_t f0 = now_ns();
         t0[frames] = f0;
+        uint64_t frame_bytes_sent = 0;
         for (size_t c = 0; c < total_chunks; c++) {
             size_t len = (c == total_chunks - 1) ? frame_bytes - c * chunk : chunk;
+            if (pace_gbps > 0) /* spread the frame: chunk c leaves when the target rate allows it */
+                pace_until(f0 + (uint64_t)((double)frame_bytes_sent * 8.0 / pace_gbps));
+            frame_bytes_sent += sizeof(DataHeader) + len;
             DataHeader h = { MAGIC_DATA, run_id, (uint32_t)frames, (uint16_t)c, (uint16_t)total_chunks };
             memcpy(pkt, &h, sizeof h);
             for (;;) {
@@ -282,11 +302,11 @@ static int run_sender(const char *ip, int port, size_t frame_bytes, double fps, 
     double delivered = frames ? 100.0 * (double)n_acks / (double)frames : 0;
 
     printf("label=%s frame_bytes=%zu chunk=%zu chunks_per_frame=%zu fps_target=%.0f seconds=%.1f "
-           "sndbuf=%d frames_sent=%zu frames_acked=%zu delivered_pct=%.2f achieved_fps=%.1f "
+           "sndbuf=%d pace_gbps=%.1f frames_sent=%zu frames_acked=%zu delivered_pct=%.2f achieved_fps=%.1f "
            "offered_gbps=%.2f goodput_gbps=%.2f "
            "lat_p50_ms=%.2f lat_p95_ms=%.2f lat_p99_ms=%.2f lat_max_ms=%.2f "
            "burst_p50_ms=%.2f burst_p95_ms=%.2f burst_max_ms=%.2f enobufs_retries=%llu send_errors=%llu\n",
-           label, frame_bytes, chunk, total_chunks, fps, seconds, got_sndbuf, frames, n_acks, delivered,
+           label, frame_bytes, chunk, total_chunks, fps, seconds, got_sndbuf, pace_gbps, frames, n_acks, delivered,
            (double)frames / elapsed, offered_gbps, goodput_gbps,
            pct_ms(lat, n_acks, 50), pct_ms(lat, n_acks, 95), pct_ms(lat, n_acks, 99),
            n_acks ? (double)lat[n_acks - 1] / 1e6 : NAN,
@@ -304,7 +324,8 @@ static void usage(void)
             "usage:\n"
             "  framebench recv [--port P]\n"
             "  framebench send <ip> [--port P] [--frame-bytes N] [--fps F] [--seconds S]\n"
-            "                       [--chunk N] [--sndbuf N] [--label NAME]\n"
+            "                       [--chunk N] [--sndbuf N] [--pace GBPS] [--label NAME]\n"
+            "  --pace spreads each frame's chunks at GBPS gigabits/s instead of one burst.\n"
             "  --fps 0 sends frames back-to-back (maximum rate).\n");
 }
 
@@ -317,6 +338,7 @@ int main(int argc, char **argv)
     size_t chunk = 65000;
     int sndbuf = 8 * 1024 * 1024;
     const char *label = "run";
+    double pace_gbps = 0;
     const char *ip = NULL;
     int i = 2;
     if (strcmp(argv[1], "send") == 0) {
@@ -338,9 +360,10 @@ int main(int argc, char **argv)
         else if (!strcmp(a, "--chunk")) chunk = (size_t)strtoull(v, NULL, 10);
         else if (!strcmp(a, "--sndbuf")) sndbuf = atoi(v);
         else if (!strcmp(a, "--label")) label = v;
+        else if (!strcmp(a, "--pace")) pace_gbps = atof(v);
         else { usage(); return 1; }
     }
     if (ip)
-        return run_sender(ip, port, frame_bytes, fps, seconds, chunk, sndbuf, label);
+        return run_sender(ip, port, frame_bytes, fps, seconds, chunk, sndbuf, pace_gbps, label);
     return run_receiver(port);
 }

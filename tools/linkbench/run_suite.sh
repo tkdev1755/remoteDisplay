@@ -42,9 +42,10 @@ done
 
 # --- 2. remoteDisplay-like traffic (framebench) ---------------------------
 FB="$OUT/framebench.txt"
-bench() { # label, frame bytes, fps, chunk
+bench() { # label, frame bytes, fps, chunk, [pace Gbit/s]
     echo "framebench $1"
-    ./framebench send "$IP" --label "$1" --frame-bytes "$2" --fps "$3" --chunk "$4" --seconds "$SECS" >> "$FB"
+    ./framebench send "$IP" --label "$1" --frame-bytes "$2" --fps "$3" --chunk "$4" \
+        --pace "${5:-0}" --seconds "$SECS" >> "$FB"
     sleep 1
 }
 NV12_4K=$((4096 * 2304 * 3 / 2))   # today's frames
@@ -60,6 +61,11 @@ for f in "4k_nv12 $NV12_4K" "4k_bc7 $BC7_4K" "5k_bc7 $BC7_5K" "5k_nv12 $NV12_5K"
         bench "${1}_${fps}fps" "$2" "$fps" 65000
     done
 done
+# Pacing: spread each frame over its period instead of one burst at full speed.
+for pace in 10 12 14 16; do
+    bench "5k_nv12_60fps_pace${pace}" "$NV12_5K" 60 65000 "$pace"
+done
+bench "4k_nv12_60fps_pace10" "$NV12_4K" 60 65000 10
 # Effect of the datagram size on today's frames.
 for c in 4000 8000 12000 16000 24000 32000 48000; do
     bench "4k_nv12_60fps_chunk$c" "$NV12_4K" 60 "$c"
@@ -106,7 +112,7 @@ print("\n== iperf3 ==")
 for r in rows:
     print(f"{r['test']:<24} {r.get('gbps', ''):>7} Gbit/s  loss {r.get('lost_pct', '-')}%  {r.get('error', '')}")
 print("\n== framebench ==")
-cols = ["label", "delivered_pct", "achieved_fps", "goodput_gbps", "lat_p50_ms", "lat_p99_ms", "burst_p50_ms"]
+cols = ["label", "delivered_pct", "goodput_gbps", "burst_p50_ms", "burst_p95_ms", "lat_p50_ms"]
 print("  ".join(f"{c:>14}" for c in cols))
 for r in fb:
     print("  ".join(f"{r.get(c, ''):>14}" for c in cols))

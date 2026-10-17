@@ -20,7 +20,9 @@ shaped like remoteDisplay's.
    - **burst**: first chunk → last chunk, on the receiver's clock;
    - **goodput**: useful bits of complete frames per second.
 
-   It also checks how the datagram size (4,000 to 48,000 bytes) affects today's frames.
+   It also checks how the datagram size (4,000 to 48,000 bytes) affects today's frames,
+   and whether **pacing** (`--pace <Gbit/s>`: spreading each frame's chunks over
+   its period instead of one burst at full speed) lets uncompressed 5K through.
 
 ## Running it
 

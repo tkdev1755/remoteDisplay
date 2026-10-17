@@ -1,0 +1,6 @@
+# latency results (videos and snapshots stay local)
+results/
+*.mov
+*.mp4
+*.png
+*.json
