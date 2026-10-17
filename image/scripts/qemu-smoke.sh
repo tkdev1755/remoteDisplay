@@ -72,7 +72,7 @@ else
 fi
 check "  receiver binary present"          "RD-DOCTOR ok    receiver binary present"
 check "  no failed units"                  "RD-DOCTOR ok    no failed units"
-grep -E "RD-DOCTOR (kernel|root|medium|memory|timeline|uptime|info|FAIL|RESULT)" "$log" | tr -d '\r' | sed 's/^/    /'
+grep -E "RD-DOCTOR (kernel|root|medium|memory|timeline|journal|uptime|info|FAIL|RESULT)" "$log" | tr -d '\r' | sed 's/^/    /'
 
 if (( fail )); then
     echo "--- last console output ---"; tail -40 "$log"; exit 1

@@ -19,6 +19,10 @@ if [ -e /etc/remotedisplay-dev ]; then
     [ -f /root/.ssh/authorized_keys ] && chmod 600 /root/.ssh/authorized_keys
 fi
 
+# The journal is volatile (journald.conf.d). Package scripts may leave an empty
+# /var/log/journal/<machine-id> behind when they run natively: drop it.
+rm -rf /var/log/journal
+
 echo remotedisplay > /etc/hostname
 passwd -l root
 
