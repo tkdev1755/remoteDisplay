@@ -1,8 +1,18 @@
 # image — the receiver system image
 
 Reproducible build of the bootable USB image that turns an Intel iMac into a
-remoteDisplay receiver. **Work in progress: milestone 0 (the image builds and boots
-in QEMU); not yet validated on an iMac.**
+remoteDisplay receiver. **Work in progress.**
+
+**Status.** Tested on one machine, a 2017 21.5" 4K iMac (`iMac18,2`) over Thunderbolt 3:
+
+- The `dev` profile boots from a USB stick in about 32 s (picker to picture) and streams at
+  3840x2160 and at the panel's native 4096x2304 (59-60 fps, no packet loss, about 14-23 ms
+  measured receiver-side).
+- The `release` profile boots and streams on the same machine. A build that stopped the
+  systemd first-boot wizard from blocking boot was produced afterwards and has **not** yet
+  been re-tested on the iMac.
+- Other models (2015-2019, 27") and the 5K path are untested. CI only checks that the
+  image boots in QEMU (and the model-dependent panel parameter), not the GPU or Thunderbolt.
 
 ## What the image is
 
