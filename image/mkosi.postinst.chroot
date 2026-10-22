@@ -10,6 +10,11 @@ systemctl mask getty@tty1.service getty-static.service
 systemctl mask systemd-timesyncd.service apt-daily.timer apt-daily-upgrade.timer \
     e2scrub_all.timer fstrim.timer 2>/dev/null || true
 
+# /etc/machine-id is "uninitialized", so systemd treats every boot as a first boot and runs the
+# First Boot Wizard, which asks for locale, keymap, timezone and a root password on the console
+# and blocks boot until someone answers. This is an appliance: never ask.
+systemctl mask systemd-firstboot.service
+
 systemctl set-default multi-user.target
 
 # Dev profile only (marker file shipped by mkosi.profiles/dev).
@@ -24,7 +29,11 @@ fi
 rm -rf /var/log/journal
 
 echo remotedisplay > /etc/hostname
-passwd -l root
+# Lock root (no password login). Not `passwd -l`: the release profile has no passwd binary and
+# possibly no /etc/shadow either. A "*" in /etc/passwd locks the account whatever shadow says.
+sed -i 's/^root:[^:]*:/root:*:/' /etc/passwd
+[ ! -f /etc/shadow ] || sed -i 's/^root:[^:]*:/root:*:/' /etc/shadow
+grep -q '^root:\*:' /etc/passwd
 
 # The initramfs is generated before our config is copied in: rebuild it.
 update-initramfs -u -k all
