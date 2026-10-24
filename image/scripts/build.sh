@@ -50,8 +50,8 @@ fi
 # Two stages: receiver_app needs an x86-64 container; mkosi must run natively
 # (it cannot run under user-mode x86 emulation).
 echo "==> builder containers"
-docker build --platform linux/amd64 -t rd-image-builder:amd64 -f "$here/builder/Containerfile" "$here/builder"
-docker build -t rd-image-builder:native -f "$here/builder/Containerfile" "$here/builder"
+docker build --platform linux/amd64 --build-arg SNAPSHOT="$SNAPSHOT" -t rd-image-builder:amd64 -f "$here/builder/Containerfile" "$here/builder"
+docker build --build-arg SNAPSHOT="$SNAPSHOT" -t rd-image-builder:native -f "$here/builder/Containerfile" "$here/builder"
 docker volume create rd-image-build >/dev/null
 
 echo "==> receiver_app (linux/amd64)"
