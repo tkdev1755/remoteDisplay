@@ -15,7 +15,10 @@ args=(--force
 profiles="$PROFILE"; [ "$PROFILE" = release ] && profiles=""
 [ -z "${EXTRA_PROFILES:-}" ] || profiles="${profiles:+$profiles,}$EXTRA_PROFILES"
 [ -z "$profiles" ] || args+=(--profile="$profiles")
-[ -z "${SNAPSHOT:-}" ] || args+=(--snapshot="$SNAPSHOT")
+# mkosi 25.3 (Debian trixie) has no --snapshot: point its mirror at the snapshot instead. mkosi
+# hardcodes security.debian.org (not mirrored), so security updates published after the snapshot
+# are still pulled in: the pin covers main/non-free-firmware/updates, not trixie-security.
+[ -z "${SNAPSHOT:-}" ] || args+=(--mirror="https://snapshot.debian.org/archive/debian/$SNAPSHOT")
 mkdir -p "$BUILD_DIR"/{output,work,cache}
 mkosi "${args[@]}" build
 
