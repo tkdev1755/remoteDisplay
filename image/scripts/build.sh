@@ -2,7 +2,8 @@
 # Host entry point: builds the receiver image inside a Debian container.
 #
 #   PROFILE=dev|release   (default: dev — SSH + serial console, never ship it)
-#   SNAPSHOT=<id>         pin a snapshot.debian.org snapshot (reproducible builds)
+#   SNAPSHOT=<id>         snapshot.debian.org snapshot to build from; default: the id in
+#                         image/SNAPSHOT (reproducible builds). SNAPSHOT=none: latest packages.
 #   DEV_SSH_KEY=<path>    public key installed for root in the dev profile
 #   EXTRA_PROFILES=a,b    more mkosi profiles (e.g. bpo-kernel); NAME_SUFFIX=-x tags the image
 #
@@ -15,6 +16,10 @@ repo="$(dirname "$here")"
 PROFILE="${PROFILE:-dev}"
 VERSION="${VERSION:-$(git -C "$repo" describe --always --dirty --tags 2>/dev/null || echo unknown)}"
 SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "$repo" log -1 --format=%ct 2>/dev/null || date +%s)}"
+
+SNAPSHOT="${SNAPSHOT:-$(head -n1 "$here/SNAPSHOT" 2>/dev/null | tr -d '[:space:]')}"
+[ "$SNAPSHOT" != none ] || SNAPSHOT=""
+echo "Debian snapshot: ${SNAPSHOT:-none (latest packages)}"
 
 command -v docker >/dev/null || { echo "docker not found"; exit 1; }
 docker info >/dev/null 2>&1 || { echo "Docker daemon is not running"; exit 1; }

@@ -50,9 +50,12 @@ mkosi builds the root tree inside a Linux container (`builder/Containerfile`);
 The `dev` profile adds `openssh-server` (key only, from `DEV_SSH_KEY` or
 `~/.ssh/id_ed25519.pub`), a serial console, and a few diagnostic tools. Never ship it.
 
-Reproducibility: set `SNAPSHOT=<id>` (see `mkosi latest-snapshot`) to pin the Debian
-packages to a snapshot.debian.org snapshot. `SOURCE_DATE_EPOCH` defaults to the last
-commit time.
+Reproducibility: the Debian packages come from the snapshot.debian.org snapshot named in
+`SNAPSHOT` (one line, currently a date-time id), so a build next month installs the same
+package versions. `SNAPSHOT=<id> ./scripts/build.sh` overrides it, `SNAPSHOT=none` uses
+the latest packages. To update the pin: pick a recent id from
+`https://snapshot.debian.org/archive/debian/?year=YYYY&month=M`, put it in `SNAPSHOT`,
+rebuild, and re-test on the iMac. `SOURCE_DATE_EPOCH` defaults to the last commit time.
 
 ## Testing
 
