@@ -1,0 +1,38 @@
+name: reproducibility
+
+# Builds the release image twice from a clean cache and checks that the two are byte-identical
+# (image/scripts/repro-check.sh). Manual only: it takes two full builds. Nothing is hardcoded:
+# the check compares the two builds with each other.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: "3.12.2"
+
+      - name: Build twice and compare
+        env:
+          PROFILE: release
+        run: ./image/scripts/repro-check.sh
+
+      - name: Keep the logs if it differs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: repro-logs
+          path: image/out/repro-build*.log
+          retention-days: 7
+          if-no-files-found: ignore
