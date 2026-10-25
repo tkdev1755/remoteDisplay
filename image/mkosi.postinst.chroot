@@ -37,3 +37,8 @@ grep -q '^root:\*:' /etc/passwd
 
 # The initramfs is generated before our config is copied in: rebuild it.
 update-initramfs -u -k all
+
+# Reproducible builds: logs written by package scripts during the build hold the build's timestamps,
+# and are useless on a RAM-only appliance (journald is volatile).
+rm -rf /var/log/alternatives.log /var/log/dpkg.log /var/log/bootstrap.log /var/log/fontconfig.log \
+    /var/log/apt

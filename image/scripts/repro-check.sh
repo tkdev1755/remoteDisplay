@@ -57,10 +57,17 @@ docker run --rm -v "$here/out":/out -e IMG1="$img1" -e IMG2="$img2" rd-image-bui
         printf "%-28s %s | %s  %s\n" "$f" "$a" "$b" "$s"
     done
     if ! cmp -s p1/live/filesystem.squashfs p2/live/filesystem.squashfs; then
-        echo "--- files that differ inside the squashfs (first 40)"
+        echo "--- regular files whose content differs, and symlinks whose target differs (first 40)"
         unsquashfs -q -d r1 p1/live/filesystem.squashfs >/dev/null 2>&1
         unsquashfs -q -d r2 p2/live/filesystem.squashfs >/dev/null 2>&1
-        diff -rq r1 r2 2>&1 | head -40
+        for n in 1 2; do
+            (cd r$n && { find . -type f -exec sha256sum {} + ; find . -type l -printf "%p -> %l\n"; } \
+                | LC_ALL=C sort -k2) > c$n.txt
+        done
+        diff c1.txt c2.txt | grep "^[<>]" | head -40
+        echo "--- metadata differences (owner, mode, size, time), first 40"
+        for n in 1 2; do unsquashfs -ll p$n/live/filesystem.squashfs 2>/dev/null | sed "s/^.*squashfs-root//" | LC_ALL=C sort > m$n.txt; done
+        diff m1.txt m2.txt | grep "^[<>]" | head -40
     fi
 '
 exit 1
