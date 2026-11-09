@@ -47,24 +47,24 @@ class ThunderboltManager: ObservableObject, PowerMonitorDelegate {
             let formattedValue = String(format: "%.0f", value)
             let message = "BRIGHTNESS:\(formattedValue)"
             
-            
             self.networkUpdater.sendMessage(message)
     }
     
     
     func systemDidWake() {
-            print("Received action from delegate : Mac woke up")
-            self.onSleep = false
+        print("Received action from delegate : Mac woke up")
+        self.onSleep = false
+        if (self.isUp){
             self.start()
-            
         }
         
-        func systemWillSleep() {
-            onSleep = true
-            print("Action from delegate : Mac goes to sleep")
-            self.stop()
-
             
+    }
+        
+    func systemWillSleep() {
+        onSleep = true
+        print("Action from delegate : Mac goes to sleep")
+        self.stop()
     }
     
     private func sendConnectionMessage(){
@@ -87,7 +87,6 @@ class ThunderboltManager: ObservableObject, PowerMonitorDelegate {
             
             
             let isThunderboltBridgeActive = path.availableInterfaces.contains { interface in
-                
                 interface.name == "bridge0"
             }
             DispatchQueue.main.async {
@@ -99,10 +98,11 @@ class ThunderboltManager: ObservableObject, PowerMonitorDelegate {
                 self?.start(modifyDisplayConf: true)
                 
             }
+            // If the connection is not active anymore, and the computer isn't sleeping
+            // Stop screen recording
             else if !isThunderboltBridgeActive && !(self!.onSleep){
                 print("Stopping display copy - Thunderbolt connection dropped")
                 self?.stop(modifyDisplayConf: true)
-                
             }
             
         }
