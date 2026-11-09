@@ -21,10 +21,12 @@ ENV DEBIAN_FRONTEND=noninteractive
 # snapshot's -dev packages depend on exact versions: trixie-security is therefore pinned too, to a
 # debian-security snapshot taken after the base image (the two archives have separate ids).
 # Refresh both together with the digest above.
+# Check-Valid-Until: no, because snapshot Release files of the -updates/-security suites carry a
+# Valid-Until of about a week and apt refuses them afterwards (the build broke 7 days after the pin).
 ARG SNAPSHOT=
 ARG SECURITY_SNAPSHOT=20261024T115256Z
 RUN if [ -n "$SNAPSHOT" ]; then \
-        printf 'Types: deb\nURIs: http://snapshot.debian.org/archive/debian/%s\nSuites: trixie trixie-updates\nComponents: main\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\n\nTypes: deb\nURIs: http://snapshot.debian.org/archive/debian-security/%s\nSuites: trixie-security\nComponents: main\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\n' "$SNAPSHOT" "$SECURITY_SNAPSHOT" \
+        printf 'Types: deb\nURIs: http://snapshot.debian.org/archive/debian/%s\nSuites: trixie trixie-updates\nComponents: main\nCheck-Valid-Until: no\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\n\nTypes: deb\nURIs: http://snapshot.debian.org/archive/debian-security/%s\nSuites: trixie-security\nComponents: main\nCheck-Valid-Until: no\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\n' "$SNAPSHOT" "$SECURITY_SNAPSHOT" \
             > /etc/apt/sources.list.d/debian.sources; \
     fi
 RUN apt-get update && apt-get install -y --no-install-recommends \
