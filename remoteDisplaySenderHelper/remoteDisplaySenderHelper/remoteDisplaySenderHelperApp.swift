@@ -26,7 +26,7 @@ struct remoteDisplaySenderHelperApp: App {
 
     var body: some Scene {
     
-        MenuBarExtra("", systemImage : "circle"){
+        MenuBarExtra("", systemImage : "display"){
             ContentView(manager: manager)
         }
         .menuBarExtraStyle(.window)

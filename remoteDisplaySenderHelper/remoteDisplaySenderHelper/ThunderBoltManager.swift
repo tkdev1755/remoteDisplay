@@ -58,7 +58,6 @@ class ThunderboltManager: ObservableObject, PowerMonitorDelegate {
             self.start()
         }
         
-            
     }
         
     func systemWillSleep() {
