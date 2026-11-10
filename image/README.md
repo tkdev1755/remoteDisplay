@@ -82,7 +82,6 @@ Thunderbolt link: those need the real hardware.
 
 ## Known unknowns
 
-- Not booted on an iMac yet (default-boot behaviour, firmware USB read speed).
 - The QEMU smoke test cannot exercise the GPU (Mesa/LLVM stack), `thunderbolt0`, or
   the receiver itself — only the boot chain, RAM loading, firewall and services.
 - Latency must be re-measured: the 20–30 ms figure was obtained on Pop!_OS with its
